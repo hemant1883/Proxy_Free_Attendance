@@ -1,0 +1,6 @@
+{
+  "name": "PresenceGuard",
+  "description": "Multi-Factor Presence Verification Attendance System - Phase 1 BLE Proximity Verification",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
