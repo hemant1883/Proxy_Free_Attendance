@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: presenceguard-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: Dockerfile
+    plan: free
+    region: singapore
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: SPRING_DATASOURCE_URL
+        value: jdbc:mysql://gateway01.ap-northeast-1.prod.aws.tidbcloud.com:4000/attendanceSystem?sslMode=VERIFY_IDENTITY&useSSL=true&serverTimezone=UTC
+      - key: SPRING_DATASOURCE_USERNAME
+        value: 2mY1bqcNbVWhrqR.root
+      - key: SPRING_DATASOURCE_PASSWORD
+        value: MswSKU9N2RV01rIV
+      - key: APP_JWT_SECRET
+        value: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      - key: APP_BLE_RSSI_THRESHOLD
+        value: -70

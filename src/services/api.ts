@@ -5,13 +5,18 @@ import {
   AttendanceSession, AttendanceRecord 
 } from '../types';
 
+// Base API URL: Uses VITE_API_URL if defined (e.g. on Vercel), otherwise defaults to relative /api
+const API_BASE_URL = (import.meta as any).env?.VITE_API_URL 
+  ? `${(import.meta as any).env.VITE_API_URL.replace(/\/$/, '')}/api` 
+  : '/api';
+
 // Axios instance with base configuration
 export const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 5000,
+  timeout: 10000,
 });
 
 // Interceptor to inject JWT token into Bearer Authorization header

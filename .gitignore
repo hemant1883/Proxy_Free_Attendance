@@ -6,3 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Java / Maven target directories
+target/
+backend/target/
+*.jar
+*.class
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
