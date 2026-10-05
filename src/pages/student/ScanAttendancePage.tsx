@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { mockBLEService } from '../../services/ble/MockBLEService';
+import { capacitorBLEService } from '../../services/ble/CapacitorBLEService';
 import { AttendanceSession, BLEDiscoveredDevice } from '../../types';
 import { RSSIIndicator, getRSSICategory } from '../../components/common/RSSIIndicator';
 import { 
@@ -60,8 +61,8 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     setSubmissionResult(null);
 
     try {
-      // Calls BLEService.scanForTeacher()
-      const device = await mockBLEService.scanForTeacher({ courseCode: session.courseCode });
+      // Calls BLEService.scanForTeacher() - Uses hardware BLE on Android, simulated on web
+      const device = await capacitorBLEService.scanForTeacher({ courseCode: session.courseCode });
 
       if (!device) {
         setScanError(
@@ -420,7 +421,7 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
           setShowSimModal(false);
           // Refresh device if already scanned
           if (discoveredDevice) {
-            mockBLEService.getRSSI().then(r => {
+            capacitorBLEService.getRSSI().then(r => {
               setDiscoveredDevice(prev => prev ? { ...prev, rssi: r } : null);
             });
           }
