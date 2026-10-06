@@ -131,21 +131,6 @@ class MockBLEServiceImpl implements BLEService {
     const broadcast = this.getActiveBroadcast();
 
     if (!broadcast) {
-      // If teacher is running in BlueStacks, emulator, or web browser on PC
-      // (which have no physical Bluetooth radio transmitter), bridge with the active cloud session:
-      if (options?.courseCode) {
-        const currentRSSI = await this.getRSSI();
-        return {
-          deviceId: `Teacher_Device_${options.courseCode}`,
-          deviceName: `Teacher_Beacon_${options.courseCode}`,
-          courseCode: options.courseCode,
-          sessionId: options.sessionId || 1,
-          teacherName: options.teacherName || 'Classroom Faculty Beacon',
-          rssi: currentRSSI,
-          timestamp: Date.now(),
-          isSimulated: true
-        };
-      }
       return null;
     }
 

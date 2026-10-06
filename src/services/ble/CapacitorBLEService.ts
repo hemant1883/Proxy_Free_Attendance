@@ -143,6 +143,11 @@ class CapacitorBLEServiceImpl implements BLEService {
       return foundDevice;
     }
 
+    // On physical mobile device: if the antenna did not detect any teacher beacon, return null
+    if (Capacitor.isNativePlatform()) {
+      return null;
+    }
+
     return mockBLEService.scanForTeacher(options);
   }
 

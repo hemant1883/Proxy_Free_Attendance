@@ -8,9 +8,8 @@ import { RSSIIndicator, getRSSICategory } from '../../components/common/RSSIIndi
 import { 
   Radio, Bluetooth, ShieldCheck, AlertTriangle, 
   CheckCircle2, Loader2, RefreshCw, Smartphone, 
-  Sliders, ArrowRight, XCircle 
+  ArrowRight, XCircle 
 } from 'lucide-react';
-import { BLESimulationModal } from '../../components/common/BLESimulationModal';
 
 export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }> = ({ onNavigate }) => {
   const { user } = useAuth();
@@ -30,9 +29,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     rssi?: number;
     status?: string;
   } | null>(null);
-
-  // Modal to change RSSI during testing
-  const [showSimModal, setShowSimModal] = useState(false);
 
   const studentId = user?.studentId || 1;
 
@@ -122,16 +118,9 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
         <div>
           <h1 className="text-xl font-bold text-slate-900">Classroom Presence Verification</h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Detect the teacher's BLE broadcast and verify your spatial presence inside the lecture hall.
+            Detect the teacher's physical BLE broadcast and verify your spatial presence inside the lecture hall.
           </p>
         </div>
-        <button
-          onClick={() => setShowSimModal(true)}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 text-xs font-semibold hover:bg-blue-100 transition-colors"
-        >
-          <Sliders className="w-3.5 h-3.5 text-blue-600" />
-          <span>Tune Simulated RSSI</span>
-        </button>
       </div>
 
       {/* Active Sessions List */}
@@ -253,13 +242,14 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                       <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                             <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                              Teacher Device Found
+                              Teacher Device Detected
                             </span>
                           </div>
-                          <span className="text-[10px] font-mono bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-semibold">
-                            Simulated BLE Beacon
+                          <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded font-semibold flex items-center gap-1">
+                            <Bluetooth className="w-3 h-3 text-emerald-600" />
+                            Hardware BLE Beacon
                           </span>
                         </div>
 
@@ -418,19 +408,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
         )}
       </div>
 
-      {/* Simulator Modal */}
-      <BLESimulationModal
-        isOpen={showSimModal}
-        onClose={() => {
-          setShowSimModal(false);
-          // Refresh device if already scanned
-          if (discoveredDevice) {
-            capacitorBLEService.getRSSI().then(r => {
-              setDiscoveredDevice(prev => prev ? { ...prev, rssi: r } : null);
-            });
-          }
-        }}
-      />
     </div>
   );
 };

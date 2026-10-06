@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { BLEStatusBadge } from './BLEStatusBadge';
-import { BLESimulationModal } from './BLESimulationModal';
-import { Shield, LogOut, BookOpen, User, RotateCcw } from 'lucide-react';
+import { Shield, LogOut, BookOpen, User, RotateCcw, Bluetooth } from 'lucide-react';
 import { UserRole } from '../../types';
 
 interface NavbarProps {
@@ -11,7 +9,6 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
   const { user, role, logout, quickSwitch, resetDatabase } = useAuth();
-  const [showSimModal, setShowSimModal] = useState<boolean>(false);
 
   return (
     <>
@@ -26,8 +23,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-lg text-slate-900 tracking-tight">PresenceGuard</span>
-                  <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-sm bg-blue-100 text-blue-800">
-                    Phase 1
+                  <span className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-sm bg-emerald-100 text-emerald-800">
+                    Live BLE
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 hidden sm:block">
@@ -36,9 +33,11 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
               </div>
             </div>
 
-            {/* Middle: BLE Simulator quick badge */}
-            <div className="flex items-center gap-2.5">
-              <BLEStatusBadge onClick={() => setShowSimModal(true)} />
+            {/* Middle: Hardware BLE status */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <Bluetooth className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Hardware BLE Active</span>
             </div>
 
             {/* Right side: Quick Role Switcher, Docs, User Menu */}
@@ -108,11 +107,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
         </div>
       </header>
 
-      {/* BLE Simulation Modal */}
-      <BLESimulationModal
-        isOpen={showSimModal}
-        onClose={() => setShowSimModal(false)}
-      />
     </>
   );
 };
