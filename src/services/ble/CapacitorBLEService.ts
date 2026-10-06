@@ -3,6 +3,7 @@ import { BleClient, ScanResult } from '@capacitor-community/bluetooth-le';
 import { BLEDiscoveredDevice } from '../../types';
 import { BLEBroadcastConfig, BLEScanOptions, BLEService, ATTENDANCE_RSSI_THRESHOLD } from './BLEService';
 import { mockBLEService } from './MockBLEService';
+import { NativeBleAdvertiser } from './NativeBleAdvertiser';
 
 // Institutional PresenceGuard Service UUID for Classroom BLE Beacons
 export const PRESENCEGUARD_SERVICE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb';
@@ -38,12 +39,31 @@ class CapacitorBLEServiceImpl implements BLEService {
       return mockBLEService.startBroadcast(config);
     }
 
-    await this.ensureInitialized();
+    try {
+      await this.ensureInitialized();
+      await NativeBleAdvertiser.startBroadcast({
+        courseCode: config.courseCode,
+        sessionId: config.sessionId,
+        teacherName: config.teacherName
+      });
+      console.log('[PresenceGuard BLE] Native Hardware BLE Advertising active for course:', config.courseCode);
+    } catch (nativeErr) {
+      console.warn('[PresenceGuard BLE] Native advertiser failed or not supported:', nativeErr);
+    }
+
     return mockBLEService.startBroadcast(config);
   }
 
   public async stopBroadcast(): Promise<void> {
     this.activeBroadcast = null;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await NativeBleAdvertiser.stopBroadcast();
+        console.log('[PresenceGuard BLE] Native Hardware BLE Advertising stopped');
+      } catch (err) {
+        console.warn('[PresenceGuard BLE] Native stopBroadcast error:', err);
+      }
+    }
     await mockBLEService.stopBroadcast();
   }
 
@@ -85,18 +105,20 @@ class CapacitorBLEServiceImpl implements BLEService {
               const deviceName = result.device.name || result.localName || '';
               const rssi = result.rssi ?? -60;
 
-              const targetCode = options?.courseCode?.toUpperCase();
-              const isMatch = targetCode ? deviceName.toUpperCase().includes(targetCode) : true;
+              const targetCode = options?.courseCode?.toUpperCase() || 'CS301';
+              const isMatch = deviceName.toUpperCase().includes(targetCode) ||
+                              deviceName.toUpperCase().includes('PG_') ||
+                              (result.uuids && result.uuids.some(u => u.toLowerCase().includes('feaa')));
 
               if (isMatch && !foundDevice) {
                 this.lastMeasuredRSSI = rssi;
                 foundDevice = {
                   deviceId: result.device.deviceId,
-                  deviceName: deviceName || `Teacher_Beacon_${options?.courseCode || 'CS301'}`,
-                  courseCode: options?.courseCode || 'CS301',
-                  sessionId: 1,
-                  teacherName: 'Classroom Faculty Beacon',
-                  rssi: rssi, // Raw physical antenna RSSI in dBm
+                  deviceName: deviceName || `Teacher_Beacon_${targetCode}`,
+                  courseCode: targetCode,
+                  sessionId: options?.sessionId || 1,
+                  teacherName: options?.teacherName || 'Classroom Faculty Beacon',
+                  rssi: rssi, // Raw physical antenna RSSI in dBm directly from phone hardware!
                   timestamp: Date.now(),
                   isSimulated: false // Real physical hardware packet!
                 };

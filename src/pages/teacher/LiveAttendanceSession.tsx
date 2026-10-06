@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
-import { mockBLEService } from '../../services/ble/MockBLEService';
+import { capacitorBLEService } from '../../services/ble/CapacitorBLEService';
 import { AttendanceSession, AttendanceRecord } from '../../types';
 import { RSSIIndicator, getRSSICategory } from '../../components/common/RSSIIndicator';
 import { 
@@ -20,7 +20,7 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isBroadcasting, setIsBroadcasting] = useState(mockBLEService.isBroadcasting());
+  const [isBroadcasting, setIsBroadcasting] = useState(capacitorBLEService.isBroadcasting());
   const [deviceIdentifier, setDeviceIdentifier] = useState('Teacher_Device_001');
 
   // Find or fetch active session
@@ -62,10 +62,10 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
     if (!session) return;
 
     if (isBroadcasting) {
-      await mockBLEService.stopBroadcast();
+      await capacitorBLEService.stopBroadcast();
       setIsBroadcasting(false);
     } else {
-      await mockBLEService.startBroadcast({
+      await capacitorBLEService.startBroadcast({
         sessionId: session.id,
         courseCode: session.courseCode,
         courseName: session.courseName,
@@ -81,7 +81,7 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
     if (!session) return;
     if (confirm('Are you sure you want to end this attendance session?')) {
       await api.stopAttendanceSession(session.id);
-      await mockBLEService.stopBroadcast();
+      await capacitorBLEService.stopBroadcast();
       setIsBroadcasting(false);
       if (onSessionEnded) onSessionEnded();
       else fetchSession();

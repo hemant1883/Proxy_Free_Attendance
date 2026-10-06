@@ -61,8 +61,12 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     setSubmissionResult(null);
 
     try {
-      // Calls BLEService.scanForTeacher() - Uses hardware BLE on Android, simulated on web
-      const device = await capacitorBLEService.scanForTeacher({ courseCode: session.courseCode });
+      // Calls BLEService.scanForTeacher() - Uses hardware BLE on Android, fallback to cloud session when teacher is on PC
+      const device = await capacitorBLEService.scanForTeacher({ 
+        courseCode: session.courseCode,
+        sessionId: session.id,
+        teacherName: session.teacherName
+      });
 
       if (!device) {
         setScanError(
