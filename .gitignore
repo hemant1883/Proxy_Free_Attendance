@@ -11,6 +11,7 @@ coverage/
 target/
 backend/target/
 *.jar
+!gradle-wrapper.jar
 *.class
 
 # IDE files
