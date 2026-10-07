@@ -8,19 +8,47 @@ import { NativeBleAdvertiser } from './NativeBleAdvertiser';
 // Institutional PresenceGuard Service UUID for Classroom BLE Beacons
 export const PRESENCEGUARD_SERVICE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb';
 
-// Utility to convert hex strings returned by Android BleClient into ASCII text
-function hexToAscii(hex: string): string {
-  try {
-    let str = '';
-    for (let i = 0; i < hex.length; i += 2) {
-      const code = parseInt(hex.substring(i, i + 2), 16);
+// Utility to convert hex strings, DataView, ArrayBuffer, and Uint8Array into ASCII and Hex
+function parseDataPayload(data: any): { ascii: string; hex: string } {
+  if (!data) return { ascii: '', hex: '' };
+
+  if (typeof data === 'string') {
+    let ascii = '';
+    for (let i = 0; i < data.length; i += 2) {
+      const code = parseInt(data.substring(i, i + 2), 16);
       if (!isNaN(code) && code >= 32 && code <= 126) {
-        str += String.fromCharCode(code);
+        ascii += String.fromCharCode(code);
       }
     }
-    return str;
+    return { ascii, hex: data.toUpperCase() };
+  }
+
+  try {
+    let bytes: Uint8Array;
+    if (data instanceof DataView) {
+      bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    } else if (data instanceof ArrayBuffer) {
+      bytes = new Uint8Array(data);
+    } else if (ArrayBuffer.isView(data)) {
+      bytes = new Uint8Array(data.buffer, (data as any).byteOffset || 0, (data as any).byteLength || data.buffer.byteLength);
+    } else if (Array.isArray(data)) {
+      bytes = new Uint8Array(data);
+    } else {
+      return { ascii: '', hex: '' };
+    }
+
+    let ascii = '';
+    let hex = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
+      hex += b.toString(16).padStart(2, '0');
+      if (b >= 32 && b <= 126) {
+        ascii += String.fromCharCode(b);
+      }
+    }
+    return { ascii, hex: hex.toUpperCase() };
   } catch {
-    return '';
+    return { ascii: '', hex: '' };
   }
 }
 
@@ -157,40 +185,38 @@ class CapacitorBLEServiceImpl implements BLEService {
                 u.toLowerCase().includes('feaa') || u.toLowerCase() === PRESENCEGUARD_SERVICE_UUID.toLowerCase()
               );
 
-              // B. Decode Service Data (Android returns hex string e.g. "4353333031" for "CS301")
+              // B. Decode Service Data (Handles DataView, ArrayBuffer, hex string)
               let serviceDataMatch = false;
               let serviceDataDecoded = '';
               if (result.serviceData) {
                 for (const [uuid, data] of Object.entries(result.serviceData)) {
-                  if (uuid.toLowerCase().includes('feaa')) {
-                    const hexStr = typeof data === 'string' ? data : '';
-                    const asciiStr = hexToAscii(hexStr);
-                    serviceDataDecoded = asciiStr;
-                    if (hexStr.toUpperCase().includes(targetCode) || 
-                        asciiStr.toUpperCase().includes(targetCode)) {
-                      serviceDataMatch = true;
-                    }
+                  const parsed = parseDataPayload(data);
+                  if (parsed.ascii) serviceDataDecoded = parsed.ascii;
+                  if (parsed.ascii.toUpperCase().includes(targetCode) || 
+                      parsed.hex.toUpperCase().includes(targetCode) ||
+                      uuid.toLowerCase().includes('feaa')) {
+                    serviceDataMatch = true;
                   }
                 }
               }
 
-              // C. Decode Manufacturer Data (Company ID 0x1337 contains "PG_<courseCode>")
+              // C. Decode Manufacturer Data (Company ID 0x1337 / 4919 contains "PG_<courseCode>")
               let manufacturerMatch = false;
               let manufacturerDecoded = '';
               if (result.manufacturerData) {
-                for (const [, data] of Object.entries(result.manufacturerData)) {
-                  const hexStr = typeof data === 'string' ? data : '';
-                  const asciiStr = hexToAscii(hexStr);
-                  manufacturerDecoded = asciiStr;
-                  if (asciiStr.toUpperCase().includes(targetCode) || 
-                      asciiStr.toUpperCase().includes('PG_') ||
-                      hexStr.toUpperCase().includes(targetCode)) {
+                for (const [id, data] of Object.entries(result.manufacturerData)) {
+                  const parsed = parseDataPayload(data);
+                  if (parsed.ascii) manufacturerDecoded = parsed.ascii;
+                  if (parsed.ascii.toUpperCase().includes(targetCode) || 
+                      parsed.ascii.toUpperCase().includes('PG_') ||
+                      parsed.hex.toUpperCase().includes(targetCode) ||
+                      String(id) === '4919' || String(id) === '0x1337' || id.toLowerCase().includes('1337')) {
                     manufacturerMatch = true;
                   }
                 }
               }
 
-              // D. Check advertised device name or local name
+              // D. Check advertised device name or local name (e.g. "PG_CS301")
               const nameMatch = deviceName.toUpperCase().includes(targetCode) || 
                                 deviceName.toUpperCase().includes('PG_');
 
@@ -205,7 +231,6 @@ class CapacitorBLEServiceImpl implements BLEService {
               }
 
               // Match verification:
-              // If PresenceGuard Service UUID is present, it is our classroom beacon!
               const decodedInfo = serviceDataDecoded || manufacturerDecoded;
               const matchesCourse = !decodedInfo || decodedInfo.toUpperCase().includes(targetCode) || !options?.courseCode;
 

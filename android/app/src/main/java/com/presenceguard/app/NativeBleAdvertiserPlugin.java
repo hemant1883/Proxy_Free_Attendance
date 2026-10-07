@@ -10,8 +10,11 @@ import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelUuid;
 import android.util.Log;
+import android.widget.Toast;
 
 import androidx.core.content.ContextCompat;
 
@@ -46,13 +49,25 @@ import java.nio.charset.StandardCharsets;
 )
 public class NativeBleAdvertiserPlugin extends Plugin {
     private static final String TAG = "NativeBleAdvertiser";
-    // 16-bit SIG compatible UUID (Eddystone / Institutional Beacon space)
     public static final String PRESENCEGUARD_UUID_STR = "0000feaa-0000-1000-8000-00805f9b34fb";
+    public static final int PRESENCEGUARD_MANUFACTURER_ID = 0x1337;
 
     private BluetoothLeAdvertiser advertiser;
     private AdvertiseCallback advertiseCallback;
     private boolean isAdvertising = false;
     private String currentCourseCode = null;
+    private String originalBluetoothName = null;
+
+    private void showToast(final String message, final int duration) {
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                Context ctx = getContext();
+                if (ctx != null) {
+                    Toast.makeText(ctx, message, duration).show();
+                }
+            } catch (Exception ignored) {}
+        });
+    }
 
     @PluginMethod
     public void startBroadcast(PluginCall call) {
@@ -60,8 +75,8 @@ public class NativeBleAdvertiserPlugin extends Plugin {
 
         // Check runtime permissions on Android 12+ (API 31+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, "android.permission.BLUETOOTH_ADVERTISE") == PackageManager.PERMISSION_GRANTED;
-            boolean hasConnect = ContextCompat.checkSelfPermission(ctx, "android.permission.BLUETOOTH_CONNECT") == PackageManager.PERMISSION_GRANTED;
+            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED;
+            boolean hasConnect = ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
 
             if (!hasAdvertise || !hasConnect) {
                 requestPermissionForAlias("bluetoothAdvertise", call, "startBroadcastPermissionCallback");
@@ -82,14 +97,22 @@ public class NativeBleAdvertiserPlugin extends Plugin {
     public void startBroadcastPermissionCallback(PluginCall call) {
         Context ctx = getContext();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, "android.permission.BLUETOOTH_ADVERTISE") == PackageManager.PERMISSION_GRANTED;
-            if (hasAdvertise) {
+            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED;
+            boolean hasConnect = ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+            if (hasAdvertise && hasConnect) {
                 executeStartBroadcast(call);
             } else {
-                call.reject("Nearby devices (Bluetooth Advertise) permission is required to broadcast classroom beacon.");
+                showToast("Nearby Devices permission required for BLE Broadcast", Toast.LENGTH_LONG);
+                call.reject("Nearby devices (Bluetooth Advertise/Connect) permission denied. Please allow Nearby Devices permission in App Info settings.");
             }
         } else {
-            executeStartBroadcast(call);
+            boolean hasLocation = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            if (hasLocation) {
+                executeStartBroadcast(call);
+            } else {
+                showToast("Location permission required for BLE Broadcast", Toast.LENGTH_LONG);
+                call.reject("Location permission denied. Please allow Location permission for Bluetooth advertising.");
+            }
         }
     }
 
@@ -106,14 +129,27 @@ public class NativeBleAdvertiserPlugin extends Plugin {
 
         BluetoothAdapter bluetoothAdapter = bluetoothManager.getAdapter();
         if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            showToast("Please enable Bluetooth first", Toast.LENGTH_SHORT);
             call.reject("Bluetooth is turned off. Please enable Bluetooth on your device.");
             return;
         }
 
         advertiser = bluetoothAdapter.getBluetoothLeAdvertiser();
         if (advertiser == null) {
+            showToast("Hardware does not support BLE Advertising", Toast.LENGTH_LONG);
             call.reject("Hardware does not support BLE Peripheral / Advertising mode (BluetoothLeAdvertiser is null)");
             return;
+        }
+
+        // Set local device name to PG_<courseCode> so all nearby scanners see the beacon name directly!
+        try {
+            if (originalBluetoothName == null) {
+                originalBluetoothName = bluetoothAdapter.getName();
+            }
+            bluetoothAdapter.setName("PG_" + courseCode);
+            Log.i(TAG, "Temporary Bluetooth device name set to: PG_" + courseCode);
+        } catch (SecurityException se) {
+            Log.w(TAG, "Could not set Bluetooth adapter name: " + se.getMessage());
         }
 
         // Stop any previous active broadcast cleanly
@@ -124,30 +160,30 @@ public class NativeBleAdvertiserPlugin extends Plugin {
             isAdvertising = false;
         }
 
-        // Connectable must be TRUE for Qualcomm Snapdragon / Android 13 to avoid internal controller rejection
+        // Low latency (100ms interval) + High Tx Power for maximum presence accuracy
+        // Non-connectable beacon mode: zero connection contention, guaranteed continuous broadcasting
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-                .setConnectable(true)
+                .setConnectable(false)
                 .setTimeout(0)
                 .build();
 
-        ParcelUuid serviceUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
-
-        // Primary advertisement data (Compact: Device Name + 16-bit UUID + TxPower = ~22 bytes <= 31 bytes)
-        // Guaranteed to be visible immediately on all BLE scanners including nRF Connect
+        // Primary packet:
+        // Tx Power (3 bytes) + Manufacturer Data 0x1337 "PG_<courseCode>" (12 bytes) + Flags (3 bytes) = 18 bytes.
+        // STRICTLY <= 31 bytes on all Android devices, preventing ADVERTISE_FAILED_DATA_TOO_LARGE.
         AdvertiseData primaryData = new AdvertiseData.Builder()
-                .setIncludeDeviceName(true)
+                .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(true)
-                .addServiceUuid(serviceUuid)
+                .addManufacturerData(PRESENCEGUARD_MANUFACTURER_ID, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
                 .build();
 
-        // Scan response carries manufacturer identifier: PG_<courseCode> and Service Data
+        // Scan response packet:
+        // Includes Device Name "PG_<courseCode>" (10 bytes <= 31 bytes).
+        // Scanners requesting active scans will instantly receive the device name.
         AdvertiseData scanResponse = new AdvertiseData.Builder()
-                .setIncludeDeviceName(false)
+                .setIncludeDeviceName(true)
                 .setIncludeTxPowerLevel(false)
-                .addManufacturerData(0x1337, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
-                .addServiceData(serviceUuid, courseCode.getBytes(StandardCharsets.UTF_8))
                 .build();
 
         advertiseCallback = new AdvertiseCallback() {
@@ -156,9 +192,11 @@ public class NativeBleAdvertiserPlugin extends Plugin {
                 super.onStartSuccess(settingsInEffect);
                 isAdvertising = true;
                 Log.i(TAG, "Native BLE Beacon advertising active for course: " + courseCode);
+                showToast("PresenceGuard Beacon ACTIVE: PG_" + courseCode, Toast.LENGTH_SHORT);
                 JSObject ret = new JSObject();
                 ret.put("success", true);
                 ret.put("courseCode", courseCode);
+                ret.put("beaconName", "PG_" + courseCode);
                 call.resolve(ret);
             }
 
@@ -188,6 +226,7 @@ public class NativeBleAdvertiserPlugin extends Plugin {
                         break;
                 }
                 Log.e(TAG, "Native BLE advertising failed: " + errorReason);
+                showToast("BLE Broadcast Failed: " + errorReason, Toast.LENGTH_LONG);
                 call.reject("BLE Advertising failed: " + errorReason);
             }
         };
@@ -195,8 +234,10 @@ public class NativeBleAdvertiserPlugin extends Plugin {
         try {
             advertiser.startAdvertising(settings, primaryData, scanResponse, advertiseCallback);
         } catch (SecurityException se) {
+            showToast("Bluetooth permission denied: " + se.getMessage(), Toast.LENGTH_LONG);
             call.reject("Bluetooth permission denied: " + se.getMessage());
         } catch (Exception e) {
+            showToast("BLE start error: " + e.getMessage(), Toast.LENGTH_LONG);
             call.reject("Exception starting BLE advertising: " + e.getMessage());
         }
     }
@@ -213,6 +254,22 @@ public class NativeBleAdvertiserPlugin extends Plugin {
             advertiseCallback = null;
             isAdvertising = false;
             currentCourseCode = null;
+            showToast("PresenceGuard Beacon Stopped", Toast.LENGTH_SHORT);
+        }
+
+        // Restore original device name
+        if (originalBluetoothName != null) {
+            try {
+                Context context = getContext();
+                BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+                if (bluetoothManager != null) {
+                    BluetoothAdapter bluetoothAdapter = bluetoothManager.getAdapter();
+                    if (bluetoothAdapter != null && bluetoothAdapter.isEnabled()) {
+                        bluetoothAdapter.setName(originalBluetoothName);
+                        Log.i(TAG, "Restored original Bluetooth device name: " + originalBluetoothName);
+                    }
+                }
+            } catch (SecurityException ignored) {}
         }
 
         JSObject ret = new JSObject();
@@ -225,6 +282,24 @@ public class NativeBleAdvertiserPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("isAdvertising", isAdvertising);
         ret.put("courseCode", currentCourseCode);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void checkPermissions(PluginCall call) {
+        Context ctx = getContext();
+        JSObject ret = new JSObject();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED;
+            boolean hasConnect = ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
+            ret.put("granted", hasAdvertise && hasConnect);
+            ret.put("hasAdvertise", hasAdvertise);
+            ret.put("hasConnect", hasConnect);
+        } else {
+            boolean hasLocation = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            ret.put("granted", hasLocation);
+            ret.put("hasLocation", hasLocation);
+        }
         call.resolve(ret);
     }
 }

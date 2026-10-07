@@ -21,6 +21,8 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isBroadcasting, setIsBroadcasting] = useState(capacitorBLEService.isBroadcasting());
+  const [isStartingBroadcast, setIsStartingBroadcast] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [deviceIdentifier, setDeviceIdentifier] = useState('Teacher_Device_001');
 
   // Find or fetch active session
@@ -40,7 +42,7 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
         if (data && data.session) {
           setSession(data.session);
           setRecords(Array.isArray(data.records) ? data.records : []);
-          setDeviceIdentifier(`Teacher_Device_${data.session.courseCode || '001'}`);
+          setDeviceIdentifier(`PG_${data.session.courseCode || 'CS301'}`);
         }
       }
     } catch (err) {
@@ -60,11 +62,13 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
   // Handle BLE Broadcast Toggle
   const handleToggleBroadcast = async () => {
     if (!session) return;
+    setBroadcastError(null);
 
     if (isBroadcasting) {
       await capacitorBLEService.stopBroadcast();
       setIsBroadcasting(false);
     } else {
+      setIsStartingBroadcast(true);
       try {
         await capacitorBLEService.startBroadcast({
           sessionId: session.id,
@@ -75,7 +79,11 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
         });
         setIsBroadcasting(true);
       } catch (err: any) {
-        alert(err?.message || 'Failed to start BLE broadcast. Please ensure Bluetooth is enabled and nearby device permissions are allowed.');
+        const msg = err?.message || 'Failed to start BLE broadcast. Please ensure Bluetooth is enabled and nearby device permissions are allowed.';
+        setBroadcastError(msg);
+        alert(msg);
+      } finally {
+        setIsStartingBroadcast(false);
       }
     }
   };
@@ -165,14 +173,23 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
               <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   onClick={handleToggleBroadcast}
+                  disabled={isStartingBroadcast}
                   className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-lg shadow-xs transition-colors ${
-                    isBroadcasting
+                    isStartingBroadcast
+                      ? 'bg-blue-400 text-white cursor-wait'
+                      : isBroadcasting
                       ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
                 >
                   <Bluetooth className={`w-4 h-4 ${isBroadcasting ? 'animate-pulse' : ''}`} />
-                  <span>{isBroadcasting ? 'Stop BLE Broadcast' : 'Start BLE Broadcast'}</span>
+                  <span>
+                    {isStartingBroadcast
+                      ? 'Initializing BLE Hardware...'
+                      : isBroadcasting
+                      ? 'Stop BLE Broadcast'
+                      : 'Start BLE Broadcast'}
+                  </span>
                 </button>
 
                 <button
@@ -186,6 +203,16 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
             )}
           </div>
 
+          {/* Broadcast Error Banner */}
+          {broadcastError && (
+            <div className="mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2.5 text-xs text-rose-800">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">BLE Broadcast Error:</span> {broadcastError}
+              </div>
+            </div>
+          )}
+
           {/* BLE Broadcast Active Display (Prompt requirement 7 & 8) */}
           <div className="mt-5 p-4 rounded-xl border border-slate-200 bg-slate-50">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -198,17 +225,26 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
                 <div>
                   <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                     <span>BLE Broadcast:</span>
-                    {isBroadcasting ? (
+                    {isStartingBroadcast ? (
+                      <span className="text-blue-700 font-semibold flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Starting Antenna...
+                      </span>
+                    ) : isBroadcasting ? (
                       <span className="text-emerald-700 font-semibold flex items-center gap-1">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Active (Advertising Peripheral)
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Active (Hardware Broadcaster)
                       </span>
                     ) : (
                       <span className="text-slate-500 font-normal">Inactive (Click "Start BLE Broadcast")</span>
                     )}
                   </div>
                   <div className="text-xs text-slate-600 mt-0.5">
-                    Hardware Beacon Device: <span className="font-mono font-bold text-slate-900">{deviceIdentifier}</span>
+                    Hardware Beacon Identifier: <span className="font-mono font-bold text-slate-900">{deviceIdentifier}</span>
                   </div>
+                  {isBroadcasting && (
+                    <div className="text-[11px] text-emerald-700 font-mono mt-0.5">
+                      Broadcasting: Name = <strong>{deviceIdentifier}</strong> | MfgData = 0x1337 ({deviceIdentifier})
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="text-right">
