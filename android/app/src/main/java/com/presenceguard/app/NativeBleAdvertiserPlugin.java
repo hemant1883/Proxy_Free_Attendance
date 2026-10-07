@@ -8,12 +8,14 @@ import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.ParcelUuid;
 import android.util.Log;
 
+import androidx.core.content.ContextCompat;
+
 import com.getcapacitor.JSObject;
-import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -54,25 +56,34 @@ public class NativeBleAdvertiserPlugin extends Plugin {
 
     @PluginMethod
     public void startBroadcast(PluginCall call) {
-        // Request runtime permissions on Android 12+ (API 31+)
+        Context ctx = getContext();
+
+        // Check runtime permissions on Android 12+ (API 31+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (getPermissionState("bluetoothAdvertise") != PermissionState.GRANTED) {
+            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, "android.permission.BLUETOOTH_ADVERTISE") == PackageManager.PERMISSION_GRANTED;
+            boolean hasConnect = ContextCompat.checkSelfPermission(ctx, "android.permission.BLUETOOTH_CONNECT") == PackageManager.PERMISSION_GRANTED;
+
+            if (!hasAdvertise || !hasConnect) {
                 requestPermissionForAlias("bluetoothAdvertise", call, "startBroadcastPermissionCallback");
                 return;
             }
         } else {
-            if (getPermissionState("location") != PermissionState.GRANTED) {
+            boolean hasLocation = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            if (!hasLocation) {
                 requestPermissionForAlias("location", call, "startBroadcastPermissionCallback");
                 return;
             }
         }
+
         executeStartBroadcast(call);
     }
 
     @PermissionCallback
-    private void startBroadcastPermissionCallback(PluginCall call) {
+    public void startBroadcastPermissionCallback(PluginCall call) {
+        Context ctx = getContext();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (getPermissionState("bluetoothAdvertise") == PermissionState.GRANTED) {
+            boolean hasAdvertise = ContextCompat.checkSelfPermission(ctx, "android.permission.BLUETOOTH_ADVERTISE") == PackageManager.PERMISSION_GRANTED;
+            if (hasAdvertise) {
                 executeStartBroadcast(call);
             } else {
                 call.reject("Nearby devices (Bluetooth Advertise) permission is required to broadcast classroom beacon.");
@@ -113,29 +124,29 @@ public class NativeBleAdvertiserPlugin extends Plugin {
             isAdvertising = false;
         }
 
+        // Connectable must be TRUE for Qualcomm Snapdragon / Android 13 to avoid internal controller rejection
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-                .setConnectable(false)
+                .setConnectable(true)
                 .setTimeout(0)
                 .build();
 
         ParcelUuid serviceUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
 
-        // Compact primary advertisement data:
-        // 16-bit UUID (4 bytes) + Manufacturer Data (12 bytes) = 16 bytes payload (< 31 bytes limit).
-        // Delivered immediately even on passive scans without waiting for scan response!
+        // Primary advertisement data (Compact: Device Name + 16-bit UUID + TxPower = ~22 bytes <= 31 bytes)
+        // Guaranteed to be visible immediately on all BLE scanners including nRF Connect
         AdvertiseData primaryData = new AdvertiseData.Builder()
-                .setIncludeDeviceName(false)
-                .setIncludeTxPowerLevel(false)
+                .setIncludeDeviceName(true)
+                .setIncludeTxPowerLevel(true)
                 .addServiceUuid(serviceUuid)
-                .addManufacturerData(0x1337, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
                 .build();
 
-        // Scan response carries service data with course code
+        // Scan response carries manufacturer identifier: PG_<courseCode> and Service Data
         AdvertiseData scanResponse = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
+                .addManufacturerData(0x1337, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
                 .addServiceData(serviceUuid, courseCode.getBytes(StandardCharsets.UTF_8))
                 .build();
 
