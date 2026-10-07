@@ -123,20 +123,20 @@ public class NativeBleAdvertiserPlugin extends Plugin {
         ParcelUuid serviceUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
 
         // Compact primary advertisement data:
-        // 16-bit UUID (4 bytes) + 16-bit Service Data (9 bytes) = 13 bytes total payload.
-        // Guaranteed to stay far below the 31-byte legacy BLE limit!
+        // 16-bit UUID (4 bytes) + Manufacturer Data (12 bytes) = 16 bytes payload (< 31 bytes limit).
+        // Delivered immediately even on passive scans without waiting for scan response!
         AdvertiseData primaryData = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
                 .addServiceUuid(serviceUuid)
-                .addServiceData(serviceUuid, courseCode.getBytes(StandardCharsets.UTF_8))
+                .addManufacturerData(0x1337, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
                 .build();
 
-        // Scan response carries manufacturer identifier: PG_<courseCode>
+        // Scan response carries service data with course code
         AdvertiseData scanResponse = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
-                .addManufacturerData(0x1337, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
+                .addServiceData(serviceUuid, courseCode.getBytes(StandardCharsets.UTF_8))
                 .build();
 
         advertiseCallback = new AdvertiseCallback() {

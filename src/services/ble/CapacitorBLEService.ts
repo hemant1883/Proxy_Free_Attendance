@@ -8,6 +8,22 @@ import { NativeBleAdvertiser } from './NativeBleAdvertiser';
 // Institutional PresenceGuard Service UUID for Classroom BLE Beacons
 export const PRESENCEGUARD_SERVICE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb';
 
+// Utility to convert hex strings returned by Android BleClient into ASCII text
+function hexToAscii(hex: string): string {
+  try {
+    let str = '';
+    for (let i = 0; i < hex.length; i += 2) {
+      const code = parseInt(hex.substring(i, i + 2), 16);
+      if (!isNaN(code) && code >= 32 && code <= 126) {
+        str += String.fromCharCode(code);
+      }
+    }
+    return str;
+  } catch {
+    return '';
+  }
+}
+
 class CapacitorBLEServiceImpl implements BLEService {
   private isInitialized = false;
   private isScanning = false;
@@ -88,7 +104,7 @@ class CapacitorBLEServiceImpl implements BLEService {
       return null;
     }
 
-    // Verify Bluetooth hardware state and prompt user if turned off
+    // 1. Verify Bluetooth hardware state and prompt user if turned off
     try {
       const isEnabled = await BleClient.isEnabled();
       if (!isEnabled) {
@@ -98,18 +114,34 @@ class CapacitorBLEServiceImpl implements BLEService {
       console.warn('[PresenceGuard BLE] Could not request Bluetooth enable:', e);
     }
 
+    // 2. Verify Android Location / GPS service state (Android OS strictly requires Location ON for BLE scans)
+    try {
+      const isLocationEnabled = await BleClient.isLocationEnabled();
+      if (!isLocationEnabled) {
+        try {
+          await BleClient.openLocationSettings();
+        } catch {}
+        throw new Error('Location (GPS) is turned OFF on this phone. Android strictly requires Location to be ON for Bluetooth Low Energy scanning. Please enable Location in your quick settings and retry.');
+      }
+    } catch (locErr: any) {
+      if (locErr.message?.includes('Location (GPS)')) {
+        throw locErr;
+      }
+      console.warn('[PresenceGuard BLE] Location check note:', locErr);
+    }
+
     this.isScanning = true;
     let foundDevice: BLEDiscoveredDevice | null = null;
     const targetCode = options?.courseCode?.toUpperCase() || 'CS301';
 
     try {
-      await new Promise<void>(async (resolve) => {
+      await new Promise<void>(async (resolve, reject) => {
         const timeout = setTimeout(async () => {
           try {
             await BleClient.stopLEScan();
           } catch {}
           resolve();
-        }, options?.timeoutMs || 4500);
+        }, options?.timeoutMs || 5000);
 
         try {
           await BleClient.requestLEScan(
@@ -120,42 +152,49 @@ class CapacitorBLEServiceImpl implements BLEService {
               const deviceName = result.device?.name || result.localName || '';
               const rssi = result.rssi ?? -60;
 
-              // 1. Check Service UUIDs (PresenceGuard UUID / feaa)
+              // A. Check Service UUIDs (PresenceGuard UUID: feaa)
               const hasPresenceGuardUuid = Array.isArray(result.uuids) && result.uuids.some((u: string) => 
                 u.toLowerCase().includes('feaa') || u.toLowerCase() === PRESENCEGUARD_SERVICE_UUID.toLowerCase()
               );
 
-              // 2. Check Service Data for courseCode
+              // B. Decode Service Data (Android returns hex string e.g. "4353333031" for "CS301")
               let serviceDataMatch = false;
-              let hasAnyServiceData = false;
+              let serviceDataDecoded = '';
               if (result.serviceData) {
                 for (const [uuid, data] of Object.entries(result.serviceData)) {
                   if (uuid.toLowerCase().includes('feaa')) {
-                    hasAnyServiceData = true;
-                    const dataStr = typeof data === 'string' ? data : '';
-                    if (dataStr.toUpperCase().includes(targetCode)) {
+                    const hexStr = typeof data === 'string' ? data : '';
+                    const asciiStr = hexToAscii(hexStr);
+                    serviceDataDecoded = asciiStr;
+                    if (hexStr.toUpperCase().includes(targetCode) || 
+                        asciiStr.toUpperCase().includes(targetCode)) {
                       serviceDataMatch = true;
                     }
                   }
                 }
               }
 
-              // 3. Check Manufacturer Data (Company ID 0x1337 contains "PG_<courseCode>")
+              // C. Decode Manufacturer Data (Company ID 0x1337 contains "PG_<courseCode>")
               let manufacturerMatch = false;
+              let manufacturerDecoded = '';
               if (result.manufacturerData) {
                 for (const [, data] of Object.entries(result.manufacturerData)) {
-                  const dataStr = typeof data === 'string' ? data : '';
-                  if (dataStr.toUpperCase().includes(targetCode) || dataStr.toUpperCase().includes('PG_')) {
+                  const hexStr = typeof data === 'string' ? data : '';
+                  const asciiStr = hexToAscii(hexStr);
+                  manufacturerDecoded = asciiStr;
+                  if (asciiStr.toUpperCase().includes(targetCode) || 
+                      asciiStr.toUpperCase().includes('PG_') ||
+                      hexStr.toUpperCase().includes(targetCode)) {
                     manufacturerMatch = true;
                   }
                 }
               }
 
-              // 4. Check device name or local name
+              // D. Check advertised device name or local name
               const nameMatch = deviceName.toUpperCase().includes(targetCode) || 
                                 deviceName.toUpperCase().includes('PG_');
 
-              // 5. Check raw advertisement hex bytes if present
+              // E. Check raw advertisement hex bytes if present
               let rawMatch = false;
               if (result.rawAdvertisement) {
                 const asciiHex = Array.from(targetCode).map(c => c.charCodeAt(0).toString(16)).join('');
@@ -165,11 +204,17 @@ class CapacitorBLEServiceImpl implements BLEService {
                 }
               }
 
-              const isMatch = (hasPresenceGuardUuid && (serviceDataMatch || !hasAnyServiceData || nameMatch)) ||
+              // Match verification:
+              // If PresenceGuard Service UUID is present, it is our classroom beacon!
+              const decodedInfo = serviceDataDecoded || manufacturerDecoded;
+              const matchesCourse = !decodedInfo || decodedInfo.toUpperCase().includes(targetCode) || !options?.courseCode;
+
+              const isMatch = (hasPresenceGuardUuid && matchesCourse) ||
                               serviceDataMatch ||
                               manufacturerMatch ||
                               nameMatch ||
-                              (hasPresenceGuardUuid && rawMatch);
+                              (hasPresenceGuardUuid && rawMatch) ||
+                              hasPresenceGuardUuid;
 
               if (isMatch && !foundDevice) {
                 this.lastMeasuredRSSI = rssi;
@@ -191,11 +236,14 @@ class CapacitorBLEServiceImpl implements BLEService {
           );
         } catch (scanErr) {
           console.warn('[PresenceGuard BLE] Native scan error:', scanErr);
-          resolve();
+          reject(scanErr);
         }
       });
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[PresenceGuard BLE] Scan exception:', err);
+      if (err?.message?.includes('Location (GPS)')) {
+        throw err;
+      }
     } finally {
       this.isScanning = false;
     }

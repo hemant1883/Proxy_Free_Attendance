@@ -66,13 +66,13 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
 
       if (!device) {
         setScanError(
-          'No classroom BLE signal detected. Ensure your teacher has clicked "Start BLE Broadcast" on their dashboard.'
+          'No classroom BLE beacon detected. Ensure teacher broadcast is running, keep devices close (<2m), and verify Location (GPS) is turned ON in Quick Settings.'
         );
       } else {
         setDiscoveredDevice(device);
       }
     } catch (err: any) {
-      setScanError(err.message || 'Scanning failed.');
+      setScanError(err.message || 'Scanning failed. Please check Bluetooth & Location permissions.');
     } finally {
       setIsScanning(false);
     }
