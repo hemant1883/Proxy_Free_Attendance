@@ -31,7 +31,7 @@ export const StudentAttendanceHistory: React.FC = () => {
       <div>
         <h1 className="text-xl font-bold text-slate-900">Attendance Verification History</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Comprehensive log of all proximity-verified and rejected attendance events for Roll No: <span className="font-mono font-bold text-slate-800">21CSE101</span>.
+          Comprehensive log of all proximity-verified and rejected attendance events for <span className="font-semibold text-slate-800">{user?.name}</span>.
         </p>
       </div>
 

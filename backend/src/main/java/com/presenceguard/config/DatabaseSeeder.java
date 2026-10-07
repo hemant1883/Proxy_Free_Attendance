@@ -76,29 +76,38 @@ public class DatabaseSeeder implements CommandLineRunner {
             enrollmentRepository.save(new Enrollment(student2, course1));
         }
 
-        // 7. Ensure B.Sc Course exists
-        Course bscCourse = courseRepository.findByCourseCode("BSC101").orElseGet(() -> {
-            return courseRepository.save(new Course("BSC101", "B.Sc. Computer Science", 6));
+        // 7. Ensure CS304 Compiler Design Course exists
+        Course compilerDesignCourse = courseRepository.findByCourseCode("CS304").orElseGet(() -> {
+            return courseRepository.save(new Course("CS304", "Compiler Design", 6));
         });
 
-        // 8. Ensure B.Sc Teacher exists
-        if (!userRepository.existsByEmail("teacher.bsc@college.com")) {
-            User bscTeacherUser = new User("Dr. Vikram Malhotra", "teacher.bsc@college.com", passwordEncoder.encode("teacher123"), UserRole.TEACHER);
-            userRepository.save(bscTeacherUser);
-            Teacher bscTeacher = new Teacher(bscTeacherUser, "EMP-BSC-201", "B.Sc. Computer Science");
-            teacherRepository.save(bscTeacher);
-            teacherCourseRepository.save(new TeacherCourse(bscTeacher, bscCourse));
+        // 8. Ensure BCA Teacher (Prof. Alok Verma) exists
+        if (!userRepository.existsByEmail("teacher.bca@college.com")) {
+            User bcaTeacherUser = new User("Prof. Alok Verma", "teacher.bca@college.com", passwordEncoder.encode("teacher123"), UserRole.TEACHER);
+            userRepository.save(bcaTeacherUser);
+            Teacher bcaTeacher = new Teacher(bcaTeacherUser, "EMP-BCA-201", "BCA / Computer Applications");
+            teacherRepository.save(bcaTeacher);
+            teacherCourseRepository.save(new TeacherCourse(bcaTeacher, compilerDesignCourse));
         }
 
-        // 9. Ensure Student Om exists
+        // 9. Ensure Student Om exists (Classmate of Hemant in Semester 6)
         if (!userRepository.existsByEmail("om@college.com")) {
-            User omUser = new User("Om", "om@college.com", passwordEncoder.encode("student123"), UserRole.STUDENT);
+            User omUser = new User("Om Bijwe", "om@college.com", passwordEncoder.encode("student123"), UserRole.STUDENT);
             userRepository.save(omUser);
-            Student omStudent = new Student(omUser, "21BSC101", "B.Sc. Computer Science", 6);
+            Student omStudent = new Student(omUser, "21CSE105", "Computer Science", 6);
             studentRepository.save(omStudent);
-            enrollmentRepository.save(new Enrollment(omStudent, bscCourse));
+            enrollmentRepository.save(new Enrollment(omStudent, compilerDesignCourse));
+            courseRepository.findByCourseCode("CS301").ifPresent(c1 -> enrollmentRepository.save(new Enrollment(omStudent, c1)));
+            courseRepository.findByCourseCode("CS302").ifPresent(c2 -> enrollmentRepository.save(new Enrollment(omStudent, c2)));
         }
 
-        System.out.println(">>> [PresenceGuard] Database successfully seeded with B.Sc. accounts (Dr. Vikram Malhotra & Om).");
+        // Ensure Hemant is also enrolled in Compiler Design
+        userRepository.findByEmail("student@college.com").flatMap(u -> studentRepository.findByUserId(u.getId())).ifPresent(hemant -> {
+            if (!enrollmentRepository.existsByStudentIdAndCourseId(hemant.getId(), compilerDesignCourse.getId())) {
+                enrollmentRepository.save(new Enrollment(hemant, compilerDesignCourse));
+            }
+        });
+
+        System.out.println(">>> [PresenceGuard] Database successfully seeded with Compiler Design & BCA accounts (Prof. Alok Verma & Om).");
     }
 }

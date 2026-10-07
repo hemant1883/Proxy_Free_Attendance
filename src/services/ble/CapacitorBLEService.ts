@@ -1,7 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { BleClient, ScanResult } from '@capacitor-community/bluetooth-le';
 import { BLEDiscoveredDevice } from '../../types';
-import { BLEBroadcastConfig, BLEScanOptions, BLEService, ATTENDANCE_RSSI_THRESHOLD } from './BLEService';
+import { BLEBroadcastConfig, BLEScanOptions, BLEService } from './BLEService';
 import { mockBLEService } from './MockBLEService';
 import { NativeBleAdvertiser } from './NativeBleAdvertiser';
 
@@ -34,7 +34,7 @@ class CapacitorBLEServiceImpl implements BLEService {
   public async startBroadcast(config: BLEBroadcastConfig): Promise<boolean> {
     this.activeBroadcast = config;
 
-    // Web fallback or mock mode
+    // Web fallback or mock mode in browser
     if (!Capacitor.isNativePlatform()) {
       return mockBLEService.startBroadcast(config);
     }
@@ -47,11 +47,12 @@ class CapacitorBLEServiceImpl implements BLEService {
         teacherName: config.teacherName
       });
       console.log('[PresenceGuard BLE] Native Hardware BLE Advertising active for course:', config.courseCode);
-    } catch (nativeErr) {
-      console.warn('[PresenceGuard BLE] Native advertiser failed or not supported:', nativeErr);
+      return true;
+    } catch (nativeErr: any) {
+      console.error('[PresenceGuard BLE] Native advertiser failed:', nativeErr);
+      this.activeBroadcast = null;
+      throw nativeErr;
     }
-
-    return mockBLEService.startBroadcast(config);
   }
 
   public async stopBroadcast(): Promise<void> {
@@ -68,26 +69,38 @@ class CapacitorBLEServiceImpl implements BLEService {
   }
 
   public isBroadcasting(): boolean {
-    return this.activeBroadcast !== null || mockBLEService.isBroadcasting();
+    return this.activeBroadcast !== null || (!Capacitor.isNativePlatform() && mockBLEService.isBroadcasting());
   }
 
   public getActiveBroadcast(): BLEBroadcastConfig | null {
-    return this.activeBroadcast || mockBLEService.getActiveBroadcast();
+    return this.activeBroadcast || (!Capacitor.isNativePlatform() ? mockBLEService.getActiveBroadcast() : null);
   }
 
   public async scanForTeacher(options?: BLEScanOptions): Promise<BLEDiscoveredDevice | null> {
-    // If in web browser, seamlessly use calibrated simulation
+    // If in web browser, use calibrated simulation
     if (!Capacitor.isNativePlatform()) {
       return mockBLEService.scanForTeacher(options);
     }
 
     const initialized = await this.ensureInitialized();
     if (!initialized) {
-      return mockBLEService.scanForTeacher(options);
+      console.warn('[PresenceGuard BLE] BleClient initialization failed on device.');
+      return null;
+    }
+
+    // Verify Bluetooth hardware state and prompt user if turned off
+    try {
+      const isEnabled = await BleClient.isEnabled();
+      if (!isEnabled) {
+        await BleClient.requestEnable();
+      }
+    } catch (e) {
+      console.warn('[PresenceGuard BLE] Could not request Bluetooth enable:', e);
     }
 
     this.isScanning = true;
     let foundDevice: BLEDiscoveredDevice | null = null;
+    const targetCode = options?.courseCode?.toUpperCase() || 'CS301';
 
     try {
       await new Promise<void>(async (resolve) => {
@@ -96,19 +109,67 @@ class CapacitorBLEServiceImpl implements BLEService {
             await BleClient.stopLEScan();
           } catch {}
           resolve();
-        }, options?.timeoutMs || 3500);
+        }, options?.timeoutMs || 4500);
 
         try {
           await BleClient.requestLEScan(
-            {},
+            {
+              allowDuplicates: true
+            },
             (result: ScanResult) => {
-              const deviceName = result.device.name || result.localName || '';
+              const deviceName = result.device?.name || result.localName || '';
               const rssi = result.rssi ?? -60;
 
-              const targetCode = options?.courseCode?.toUpperCase() || 'CS301';
-              const isMatch = deviceName.toUpperCase().includes(targetCode) ||
-                              deviceName.toUpperCase().includes('PG_') ||
-                              (result.uuids && result.uuids.some(u => u.toLowerCase().includes('feaa')));
+              // 1. Check Service UUIDs (PresenceGuard UUID / feaa)
+              const hasPresenceGuardUuid = Array.isArray(result.uuids) && result.uuids.some((u: string) => 
+                u.toLowerCase().includes('feaa') || u.toLowerCase() === PRESENCEGUARD_SERVICE_UUID.toLowerCase()
+              );
+
+              // 2. Check Service Data for courseCode
+              let serviceDataMatch = false;
+              let hasAnyServiceData = false;
+              if (result.serviceData) {
+                for (const [uuid, data] of Object.entries(result.serviceData)) {
+                  if (uuid.toLowerCase().includes('feaa')) {
+                    hasAnyServiceData = true;
+                    const dataStr = typeof data === 'string' ? data : '';
+                    if (dataStr.toUpperCase().includes(targetCode)) {
+                      serviceDataMatch = true;
+                    }
+                  }
+                }
+              }
+
+              // 3. Check Manufacturer Data (Company ID 0x1337 contains "PG_<courseCode>")
+              let manufacturerMatch = false;
+              if (result.manufacturerData) {
+                for (const [, data] of Object.entries(result.manufacturerData)) {
+                  const dataStr = typeof data === 'string' ? data : '';
+                  if (dataStr.toUpperCase().includes(targetCode) || dataStr.toUpperCase().includes('PG_')) {
+                    manufacturerMatch = true;
+                  }
+                }
+              }
+
+              // 4. Check device name or local name
+              const nameMatch = deviceName.toUpperCase().includes(targetCode) || 
+                                deviceName.toUpperCase().includes('PG_');
+
+              // 5. Check raw advertisement hex bytes if present
+              let rawMatch = false;
+              if (result.rawAdvertisement) {
+                const asciiHex = Array.from(targetCode).map(c => c.charCodeAt(0).toString(16)).join('');
+                if (result.rawAdvertisement.toLowerCase().includes(asciiHex.toLowerCase()) ||
+                    result.rawAdvertisement.toLowerCase().includes('feaa')) {
+                  rawMatch = true;
+                }
+              }
+
+              const isMatch = (hasPresenceGuardUuid && (serviceDataMatch || !hasAnyServiceData || nameMatch)) ||
+                              serviceDataMatch ||
+                              manufacturerMatch ||
+                              nameMatch ||
+                              (hasPresenceGuardUuid && rawMatch);
 
               if (isMatch && !foundDevice) {
                 this.lastMeasuredRSSI = rssi;
@@ -118,9 +179,9 @@ class CapacitorBLEServiceImpl implements BLEService {
                   courseCode: targetCode,
                   sessionId: options?.sessionId || 1,
                   teacherName: options?.teacherName || 'Classroom Faculty Beacon',
-                  rssi: rssi, // Raw physical antenna RSSI in dBm directly from phone hardware!
+                  rssi: rssi, // Raw physical antenna signal measured directly by the phone hardware!
                   timestamp: Date.now(),
-                  isSimulated: false // Real physical hardware packet!
+                  isSimulated: false // Physical hardware packet!
                 };
                 clearTimeout(timeout);
                 BleClient.stopLEScan().catch(() => {});
@@ -129,7 +190,7 @@ class CapacitorBLEServiceImpl implements BLEService {
             }
           );
         } catch (scanErr) {
-          console.warn('[PresenceGuard BLE] Native scan error, fallback to mock:', scanErr);
+          console.warn('[PresenceGuard BLE] Native scan error:', scanErr);
           resolve();
         }
       });
@@ -143,7 +204,7 @@ class CapacitorBLEServiceImpl implements BLEService {
       return foundDevice;
     }
 
-    // On physical mobile device: if the antenna did not detect any teacher beacon, return null
+    // On physical mobile device: if the antenna did not detect any teacher beacon, return null (strict real antenna)
     if (Capacitor.isNativePlatform()) {
       return null;
     }

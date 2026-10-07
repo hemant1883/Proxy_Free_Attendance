@@ -320,19 +320,11 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                            <div>
-                              <span className="font-bold">Signal Too Weak: Move Closer To Classroom.</span> Your signal ({discoveredDevice.rssi} dBm) is weaker than {session.rssiThreshold} dBm.
-                            </div>
+                        <div className="p-3.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5">
+                          <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                          <div>
+                            <span className="font-bold">Signal Too Weak: Move Closer To Classroom.</span> Your measured signal ({discoveredDevice.rssi} dBm) is weaker than required {session.rssiThreshold} dBm.
                           </div>
-                          <button
-                            onClick={() => setShowSimModal(true)}
-                            className="shrink-0 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-semibold"
-                          >
-                            Simulate Distance
-                          </button>
                         </div>
                       )}
 

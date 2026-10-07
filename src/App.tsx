@@ -157,12 +157,12 @@ const MainAppContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Navbar onOpenDocs={() => setShowDocs(!showDocs)} />
 
-      <div className="flex-1 flex max-w-7xl w-full mx-auto">
+      <div className="flex-1 flex max-w-7xl w-full mx-auto min-w-0">
         {!showDocs && (
           <Sidebar currentTab={currentTab} onSelectTab={setCurrentTab} />
         )}
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+        <main className="flex-1 w-full min-w-0 p-3.5 sm:p-6 lg:p-8 pb-24 md:pb-8 overflow-y-auto">
           {renderContent()}
         </main>
       </div>

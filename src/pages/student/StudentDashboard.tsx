@@ -42,7 +42,7 @@ export const StudentDashboard: React.FC<{ onNavigate: (tab: string) => void }> =
       <div>
         <h1 className="text-xl font-bold text-slate-900">Student Portal</h1>
         <p className="text-xs text-slate-500 mt-0.5">
-          Welcome, <span className="font-semibold text-slate-800">{user?.name}</span> (Roll: 21CSE101). Check classroom proximity and verify your lecture presence.
+          Welcome back, <span className="font-semibold text-slate-800">{user?.name}</span>. Check classroom proximity and verify your lecture presence.
         </p>
       </div>
 

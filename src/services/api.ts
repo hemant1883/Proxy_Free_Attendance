@@ -75,10 +75,13 @@ async function handleMockRequest(config: any): Promise<AxiosResponse<any>> {
     const { email, password } = body;
     const user = mockDb.getUserByEmail(email);
 
-    const isValid = (email === 'admin@college.com' && password === 'admin123') ||
-                    (email === 'teacher@college.com' && password === 'teacher123') ||
-                    (email === 'student@college.com' && password === 'student123') ||
-                    (password === 'password' || password === '123456');
+    // Check valid credentials against role standards
+    const isValid = (user && (
+      (user.role === 'ADMIN' && (password === 'admin123' || password === 'password')) ||
+      (user.role === 'TEACHER' && (password === 'teacher123' || password === 'password')) ||
+      (user.role === 'STUDENT' && (password === 'student123' || password === 'password')) ||
+      password === 'password' || password === '123456'
+    ));
 
     if (!user || !isValid) {
       const err: any = new Error('Invalid email or password.');

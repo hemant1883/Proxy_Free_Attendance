@@ -65,14 +65,18 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
       await capacitorBLEService.stopBroadcast();
       setIsBroadcasting(false);
     } else {
-      await capacitorBLEService.startBroadcast({
-        sessionId: session.id,
-        courseCode: session.courseCode,
-        courseName: session.courseName,
-        teacherName: session.teacherName,
-        teacherDeviceId: deviceIdentifier,
-      });
-      setIsBroadcasting(true);
+      try {
+        await capacitorBLEService.startBroadcast({
+          sessionId: session.id,
+          courseCode: session.courseCode,
+          courseName: session.courseName,
+          teacherName: session.teacherName,
+          teacherDeviceId: deviceIdentifier,
+        });
+        setIsBroadcasting(true);
+      } catch (err: any) {
+        alert(err?.message || 'Failed to start BLE broadcast. Please ensure Bluetooth is enabled and nearby device permissions are allowed.');
+      }
     }
   };
 
@@ -203,13 +207,13 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
                     )}
                   </div>
                   <div className="text-xs text-slate-600 mt-0.5">
-                    Simulated Teacher Device: <span className="font-mono font-bold text-slate-900">{deviceIdentifier}</span>
+                    Hardware Beacon Device: <span className="font-mono font-bold text-slate-900">{deviceIdentifier}</span>
                   </div>
                 </div>
               </div>
               <div className="text-right">
                 <span className="text-[11px] font-mono text-slate-400">
-                  Protocol: Phase 1 MockBLE Abstraction
+                  Protocol: Bluetooth Low Energy (BLE Peripheral Mode)
                 </span>
               </div>
             </div>

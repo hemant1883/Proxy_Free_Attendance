@@ -14,7 +14,7 @@ interface DatabaseState {
   attendanceRecords: AttendanceRecord[];
 }
 
-const STORAGE_KEY = 'presenceguard_db_v1';
+const STORAGE_KEY = 'presenceguard_db_v2';
 
 const INITIAL_DATA: DatabaseState = {
   users: [
@@ -25,35 +25,37 @@ const INITIAL_DATA: DatabaseState = {
     { id: 5, name: 'Rahul Verma', email: 'rahul@college.com', role: 'STUDENT' },
     { id: 6, name: 'Sneha Patel', email: 'sneha@college.com', role: 'STUDENT' },
     { id: 7, name: 'Dr. Anita Desai', email: 'anita@college.com', role: 'TEACHER' },
-    { id: 8, name: 'Dr. Vikram Malhotra', email: 'teacher.bsc@college.com', role: 'TEACHER' },
-    { id: 9, name: 'Om', email: 'om@college.com', role: 'STUDENT' }
+    { id: 8, name: 'Prof. Alok Verma', email: 'teacher.bca@college.com', role: 'TEACHER' },
+    { id: 9, name: 'Om Bijwe', email: 'om@college.com', role: 'STUDENT' }
   ],
   students: [
     { id: 1, userId: 3, name: 'Hemant Singh', email: 'student@college.com', rollNumber: '21CSE101', department: 'Computer Science', semester: 6 },
     { id: 2, userId: 4, name: 'Priya Sharma', email: 'priya@college.com', rollNumber: '21CSE102', department: 'Computer Science', semester: 6 },
     { id: 3, userId: 5, name: 'Rahul Verma', email: 'rahul@college.com', rollNumber: '21CSE103', department: 'Computer Science', semester: 6 },
     { id: 4, userId: 6, name: 'Sneha Patel', email: 'sneha@college.com', rollNumber: '21CSE104', department: 'Computer Science', semester: 6 },
-    { id: 5, userId: 9, name: 'Om', email: 'om@college.com', rollNumber: '21BSC101', department: 'B.Sc. Computer Science', semester: 6 }
+    { id: 5, userId: 9, name: 'Om Bijwe', email: 'om@college.com', rollNumber: '21CSE105', department: 'Computer Science', semester: 6 }
   ],
   teachers: [
     { id: 1, userId: 2, name: 'Prof. Rajesh Sharma', email: 'teacher@college.com', employeeId: 'EMP-CSE-104', department: 'Computer Science' },
     { id: 2, userId: 7, name: 'Dr. Anita Desai', email: 'anita@college.com', employeeId: 'EMP-CSE-201', department: 'Computer Science' },
-    { id: 3, userId: 8, name: 'Dr. Vikram Malhotra', email: 'teacher.bsc@college.com', employeeId: 'EMP-BSC-201', department: 'B.Sc. Computer Science' }
+    { id: 3, userId: 8, name: 'Prof. Alok Verma', email: 'teacher.bca@college.com', employeeId: 'EMP-BCA-201', department: 'BCA / Computer Applications' }
   ],
   courses: [
     { id: 1, courseCode: 'CS301', courseName: 'Java Programming', semester: 6 },
     { id: 2, courseCode: 'CS302', courseName: 'Database Management Systems', semester: 6 },
     { id: 3, courseCode: 'CS303', courseName: 'Computer Networks', semester: 6 },
-    { id: 4, courseCode: 'BSC101', courseName: 'B.Sc. Computer Science', semester: 6 }
+    { id: 4, courseCode: 'CS304', courseName: 'Compiler Design', semester: 6 }
   ],
   enrollments: [
     { id: 1, studentId: 1, courseId: 1 },
     { id: 2, studentId: 1, courseId: 2 },
-    { id: 3, studentId: 2, courseId: 1 },
-    { id: 4, studentId: 2, courseId: 3 },
+    { id: 3, studentId: 1, courseId: 4 },
+    { id: 4, studentId: 2, courseId: 1 },
     { id: 5, studentId: 3, courseId: 1 },
     { id: 6, studentId: 4, courseId: 1 },
-    { id: 7, studentId: 5, courseId: 4 }
+    { id: 7, studentId: 5, courseId: 1 },
+    { id: 8, studentId: 5, courseId: 2 },
+    { id: 9, studentId: 5, courseId: 4 }
   ],
   teacherCourses: [
     { id: 1, teacherId: 1, courseId: 1 },
@@ -115,32 +117,42 @@ class MockDatabase {
         const parsed = JSON.parse(stored);
         let modified = false;
 
-        // Ensure BSC101 course exists
-        if (!parsed.courses?.some((c: any) => c.courseCode === 'BSC101')) {
+        // Ensure CS304 Compiler Design course exists
+        if (!parsed.courses?.some((c: any) => c.courseCode === 'CS304')) {
           parsed.courses = parsed.courses || [];
-          parsed.courses.push({ id: 4, courseCode: 'BSC101', courseName: 'B.Sc. Computer Science', semester: 6 });
+          parsed.courses.push({ id: 4, courseCode: 'CS304', courseName: 'Compiler Design', semester: 6 });
           modified = true;
         }
 
-        // Ensure Dr. Vikram Malhotra exists
-        if (!parsed.users?.some((u: any) => u.email === 'teacher.bsc@college.com')) {
+        // Ensure Prof. Alok Verma (BCA) exists
+        if (!parsed.users?.some((u: any) => u.email === 'teacher.bca@college.com')) {
           parsed.users = parsed.users || [];
           parsed.teachers = parsed.teachers || [];
           parsed.teacherCourses = parsed.teacherCourses || [];
-          parsed.users.push({ id: 8, name: 'Dr. Vikram Malhotra', email: 'teacher.bsc@college.com', role: 'TEACHER' });
-          parsed.teachers.push({ id: 3, userId: 8, name: 'Dr. Vikram Malhotra', email: 'teacher.bsc@college.com', employeeId: 'EMP-BSC-201', department: 'B.Sc. Computer Science' });
+          parsed.users.push({ id: 8, name: 'Prof. Alok Verma', email: 'teacher.bca@college.com', role: 'TEACHER' });
+          parsed.teachers.push({ id: 3, userId: 8, name: 'Prof. Alok Verma', email: 'teacher.bca@college.com', employeeId: 'EMP-BCA-201', department: 'BCA / Computer Applications' });
           parsed.teacherCourses.push({ id: 4, teacherId: 3, courseId: 4 });
           modified = true;
         }
 
-        // Ensure Om student exists
+        // Ensure Om Bijwe exists in same class as Hemant (Computer Science, Semester 6)
         if (!parsed.users?.some((u: any) => u.email === 'om@college.com')) {
           parsed.users = parsed.users || [];
           parsed.students = parsed.students || [];
           parsed.enrollments = parsed.enrollments || [];
-          parsed.users.push({ id: 9, name: 'Om', email: 'om@college.com', role: 'STUDENT' });
-          parsed.students.push({ id: 5, userId: 9, name: 'Om', email: 'om@college.com', rollNumber: '21BSC101', department: 'B.Sc. Computer Science', semester: 6 });
-          parsed.enrollments.push({ id: 7, studentId: 5, courseId: 4 });
+          parsed.users.push({ id: 9, name: 'Om Bijwe', email: 'om@college.com', role: 'STUDENT' });
+          parsed.students.push({ id: 5, userId: 9, name: 'Om Bijwe', email: 'om@college.com', rollNumber: '21CSE105', department: 'Computer Science', semester: 6 });
+          // Enroll Om in Java, DBMS, and Compiler Design
+          parsed.enrollments.push({ id: 7, studentId: 5, courseId: 1 });
+          parsed.enrollments.push({ id: 8, studentId: 5, courseId: 2 });
+          parsed.enrollments.push({ id: 9, studentId: 5, courseId: 4 });
+          modified = true;
+        }
+
+        // Ensure Hemant (studentId: 1) is also enrolled in CS304 Compiler Design
+        if (!parsed.enrollments?.some((e: any) => e.studentId === 1 && e.courseId === 4)) {
+          parsed.enrollments = parsed.enrollments || [];
+          parsed.enrollments.push({ id: 10, studentId: 1, courseId: 4 });
           modified = true;
         }
 

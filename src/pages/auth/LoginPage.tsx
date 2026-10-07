@@ -30,8 +30,8 @@ export const LoginPage: React.FC<{ onOpenDocs?: () => void }> = ({ onOpenDocs })
     } else if (roleOrUser === 'TEACHER_CSE') {
       setEmail('teacher@college.com');
       setPassword('teacher123');
-    } else if (roleOrUser === 'TEACHER_BSC') {
-      setEmail('teacher.bsc@college.com');
+    } else if (roleOrUser === 'TEACHER_BCA') {
+      setEmail('teacher.bca@college.com');
       setPassword('teacher123');
     } else if (roleOrUser === 'STUDENT_OM') {
       setEmail('om@college.com');
@@ -144,17 +144,17 @@ export const LoginPage: React.FC<{ onOpenDocs?: () => void }> = ({ onOpenDocs })
                 onClick={() => setDemoCredentials('TEACHER_CSE')}
                 className="p-2 border border-slate-200 rounded-lg text-left hover:border-blue-500 hover:bg-blue-50/50 transition-colors"
               >
-                <div className="text-xs font-bold text-slate-800">Teacher (CSE)</div>
-                <div className="text-[10px] text-slate-500">Prof. Sharma (CS301)</div>
+                <div className="text-xs font-bold text-slate-800">Prof. Sharma (CSE)</div>
+                <div className="text-[10px] text-slate-500">CS301 Java Programming</div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setDemoCredentials('TEACHER_BSC')}
-                className="p-2 border border-emerald-200 bg-emerald-50/30 rounded-lg text-left hover:border-emerald-500 hover:bg-emerald-50 transition-colors"
+                onClick={() => setDemoCredentials('TEACHER_BCA')}
+                className="p-2 border border-purple-200 bg-purple-50/40 rounded-lg text-left hover:border-purple-500 hover:bg-purple-50 transition-colors"
               >
-                <div className="text-xs font-bold text-emerald-900">Teacher (B.Sc.)</div>
-                <div className="text-[10px] text-emerald-700">Dr. Malhotra (BSC101)</div>
+                <div className="text-xs font-bold text-purple-900">Prof. Verma (BCA)</div>
+                <div className="text-[10px] text-purple-700">CS304 Compiler Design</div>
               </button>
 
               <button
@@ -162,17 +162,17 @@ export const LoginPage: React.FC<{ onOpenDocs?: () => void }> = ({ onOpenDocs })
                 onClick={() => setDemoCredentials('STUDENT')}
                 className="p-2 border border-slate-200 rounded-lg text-left hover:border-blue-500 hover:bg-blue-50/50 transition-colors"
               >
-                <div className="text-xs font-bold text-slate-800">Student (CSE)</div>
-                <div className="text-[10px] text-slate-500">Hemant (21CSE101)</div>
+                <div className="text-xs font-bold text-slate-800">Hemant Singh</div>
+                <div className="text-[10px] text-slate-500">21CSE101 (Sem 6)</div>
               </button>
 
               <button
                 type="button"
                 onClick={() => setDemoCredentials('STUDENT_OM')}
-                className="p-2 border border-indigo-200 bg-indigo-50/30 rounded-lg text-left hover:border-indigo-500 hover:bg-indigo-50 transition-colors"
+                className="p-2 border border-blue-200 bg-blue-50/40 rounded-lg text-left hover:border-blue-500 hover:bg-blue-50 transition-colors"
               >
-                <div className="text-xs font-bold text-indigo-900">Student (B.Sc.)</div>
-                <div className="text-[10px] text-indigo-700">Om (21BSC101)</div>
+                <div className="text-xs font-bold text-blue-900">Om Bijwe</div>
+                <div className="text-[10px] text-blue-700">21CSE105 (Same Class)</div>
               </button>
             </div>
           </div>
