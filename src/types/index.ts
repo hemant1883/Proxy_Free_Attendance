@@ -98,6 +98,7 @@ export interface BLEDiscoveredDevice {
   deviceId: string;
   deviceName: string;
   courseCode: string;
+  courseName?: string;
   sessionId: number;
   teacherName: string;
   rssi: number;

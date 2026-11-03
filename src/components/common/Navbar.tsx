@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Shield, LogOut, BookOpen, User, RotateCcw, Bluetooth, Menu, X, Check } from 'lucide-react';
+import { Shield, LogOut, BookOpen, User, RotateCcw, Bluetooth, Menu, X, Check, Server } from 'lucide-react';
+import { ServerConfigModal } from './ServerConfigModal';
 import { UserRole } from '../../types';
 
 interface NavbarProps {
@@ -10,6 +11,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
   const { user, role, logout, quickSwitch, resetDatabase } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [serverModalOpen, setServerModalOpen] = useState(false);
 
   const handleRoleSelect = (r: UserRole) => {
     quickSwitch(r);
@@ -70,6 +72,15 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
                 })}
               </div>
 
+              <button
+                onClick={() => setServerModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                title="Configure Shared Backend Server to sync live attendance between devices"
+              >
+                <Server className="w-3.5 h-3.5 text-blue-600" />
+                <span>Server</span>
+              </button>
+
               {onOpenDocs && (
                 <button
                   onClick={onOpenDocs}
@@ -127,6 +138,9 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
           </div>
         </div>
       </header>
+
+      {/* Backend Server Sync Modal */}
+      <ServerConfigModal isOpen={serverModalOpen} onClose={() => setServerModalOpen(false)} />
 
       {/* Mobile Slide-Over Menu Drawer */}
       {mobileMenuOpen && (
@@ -188,6 +202,17 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
 
               {/* Utility actions */}
               <div className="pt-2 border-t border-slate-100 space-y-1">
+                <button
+                  onClick={() => {
+                    setServerModalOpen(true);
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-lg text-left"
+                >
+                  <Server className="w-4 h-4 text-blue-600" />
+                  <span>Server Connection</span>
+                </button>
+
                 {onOpenDocs && (
                   <button
                     onClick={() => {

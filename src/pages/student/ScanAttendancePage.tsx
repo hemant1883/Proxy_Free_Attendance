@@ -84,10 +84,12 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     setSubmitting(true);
     setSubmissionResult(null);
 
+    const targetSessionId = discoveredDevice.sessionId || session.id;
+
     try {
       // POST /api/attendance/mark
       const response = await api.markAttendance(
-        session.id,
+        targetSessionId,
         studentId,
         discoveredDevice.rssi
       );
@@ -253,46 +255,67 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                           </span>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-200">
-                          {/* Device Name */}
-                          <div>
-                            <span className="text-[11px] text-slate-500 font-medium">Device:</span>
-                            <div className="font-mono font-bold text-slate-900 text-xs mt-0.5">
-                              {discoveredDevice.deviceId}
+                        {/* Scanned Broadcast & Instructor Verification Details */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
+                          {/* Verified Course Name & Code */}
+                          <div className="sm:col-span-2 lg:col-span-1">
+                            <span className="text-[11px] text-slate-500 font-medium">Broadcasting Course:</span>
+                            <div className="font-bold text-slate-900 text-xs mt-0.5 flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-[11px]">
+                                {discoveredDevice.courseCode}
+                              </span>
+                              <span className="truncate">{discoveredDevice.courseName || session.courseName}</span>
                             </div>
                           </div>
 
-                          {/* RSSI Signal */}
+                          {/* Faculty / Instructor */}
                           <div>
-                            <span className="text-[11px] text-slate-500 font-medium">RSSI:</span>
-                            <div className="font-mono font-bold text-slate-900 text-xs mt-0.5">
-                              {discoveredDevice.rssi} dBm
+                            <span className="text-[11px] text-slate-500 font-medium">Faculty Instructor:</span>
+                            <div className="font-bold text-slate-900 text-xs mt-0.5 truncate">
+                              {discoveredDevice.teacherName || session.teacherName}
                             </div>
                           </div>
 
-                          {/* Signal Strength Category */}
+                          {/* Broadcast Session ID */}
                           <div>
-                            <span className="text-[11px] text-slate-500 font-medium">Signal Strength:</span>
-                            <div className="mt-0.5">
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold ${cat.bgColor} ${cat.color} border ${cat.borderColor}`}>
+                            <span className="text-[11px] text-slate-500 font-medium">Broadcast Session ID:</span>
+                            <div className="font-mono font-bold text-blue-700 text-xs mt-0.5">
+                              Session #{discoveredDevice.sessionId}
+                            </div>
+                          </div>
+
+                          {/* Measured RSSI Antenna Signal */}
+                          <div>
+                            <span className="text-[11px] text-slate-500 font-medium">Measured Signal (RSSI):</span>
+                            <div className="font-mono font-bold text-slate-900 text-xs mt-0.5 flex items-center gap-2">
+                              <span>{discoveredDevice.rssi} dBm</span>
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${cat.bgColor} ${cat.color} border ${cat.borderColor}`}>
                                 {cat.label}
                               </span>
                             </div>
                           </div>
 
-                          {/* Eligibility */}
+                          {/* Hardware Device MAC Address */}
                           <div>
-                            <span className="text-[11px] text-slate-500 font-medium">Eligibility:</span>
+                            <span className="text-[11px] text-slate-500 font-medium">Transmitter Hardware:</span>
+                            <div className="font-mono text-slate-600 text-[11px] mt-0.5 truncate">
+                              {discoveredDevice.deviceId}
+                            </div>
+                          </div>
+
+                          {/* Presence Verification Eligibility */}
+                          <div>
+                            <span className="text-[11px] text-slate-500 font-medium">Presence Verification:</span>
                             <div className="mt-0.5">
                               {isEligible ? (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
                                   <ShieldCheck className="w-3.5 h-3.5" />
-                                  Eligible for Attendance
+                                  Spatial Presence Verified
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700">
                                   <AlertTriangle className="w-3.5 h-3.5" />
-                                  Signal Too Weak
+                                  Signal Too Weak (&lt; {session.rssiThreshold} dBm)
                                 </span>
                               )}
                             </div>

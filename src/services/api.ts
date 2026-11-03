@@ -5,22 +5,31 @@ import {
   AttendanceSession, AttendanceRecord 
 } from '../types';
 
-// Base API URL: Uses VITE_API_URL if defined (e.g. on Vercel), otherwise defaults to relative /api
-const API_BASE_URL = (import.meta as any).env?.VITE_API_URL 
-  ? `${(import.meta as any).env.VITE_API_URL.replace(/\/$/, '')}/api` 
-  : '/api';
+// Base API URL: Uses localStorage custom URL if configured, otherwise VITE_API_URL, otherwise defaults to relative /api
+export function getApiBaseUrl(): string {
+  try {
+    const custom = typeof localStorage !== 'undefined' ? localStorage.getItem('presenceguard_api_url') : null;
+    if (custom && custom.trim()) {
+      return `${custom.trim().replace(/\/$/, '')}/api`;
+    }
+  } catch {}
+  return (import.meta as any).env?.VITE_API_URL 
+    ? `${(import.meta as any).env.VITE_API_URL.replace(/\/$/, '')}/api` 
+    : '/api';
+}
 
 // Axios instance with base configuration
 export const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: getApiBaseUrl(),
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 10000,
 });
 
-// Interceptor to inject JWT token into Bearer Authorization header
+// Interceptor to inject JWT token into Bearer Authorization header and dynamic baseURL
 apiClient.interceptors.request.use((config) => {
+  config.baseURL = getApiBaseUrl();
   const token = localStorage.getItem('presenceguard_token');
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;

@@ -237,12 +237,16 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
                       <span className="text-slate-500 font-normal">Inactive (Click "Start BLE Broadcast")</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-600 mt-0.5">
-                    Hardware Beacon Identifier: <span className="font-mono font-bold text-slate-900">{deviceIdentifier}</span>
+                  <div className="text-xs text-slate-600 mt-0.5 flex flex-wrap items-center gap-2">
+                    <span>Active Session: <strong className="text-blue-700 font-mono">Session #{session.id}</strong></span>
+                    <span>•</span>
+                    <span>Course: <strong className="text-slate-900 font-mono">{session.courseCode}</strong></span>
+                    <span>•</span>
+                    <span>Faculty: <strong className="text-slate-900">{session.teacherName}</strong></span>
                   </div>
                   {isBroadcasting && (
-                    <div className="text-[11px] text-emerald-700 font-mono mt-0.5">
-                      Broadcasting: Name = <strong>{deviceIdentifier}</strong> | MfgData = 0x1337 ({deviceIdentifier})
+                    <div className="text-[11px] text-emerald-700 font-mono mt-1 bg-emerald-50 px-2.5 py-1 rounded border border-emerald-200">
+                      Broadcasting Signal Payload: <strong>PG:{session.id}:{session.courseCode}</strong> | UUID: 0xFEAA | TxPower: High
                     </div>
                   )}
                 </div>

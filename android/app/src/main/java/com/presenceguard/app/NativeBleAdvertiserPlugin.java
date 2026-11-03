@@ -171,24 +171,32 @@ public class NativeBleAdvertiserPlugin extends Plugin {
                 .build();
 
         ParcelUuid pUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
+        int sessionId = call.getInt("sessionId", 1);
+        String teacherName = call.getString("teacherName", "Faculty");
+
+        // Primary packet carries: "PG:sessionId:courseCode" (e.g. "PG:1:CS301" = 10 bytes)
+        String primaryPayload = "PG:" + sessionId + ":" + courseCode;
 
         // Primary packet:
-        // Service UUID 16-bit (4 bytes) + Tx Power (3 bytes) + Manufacturer Data 0x1337 "PG_<courseCode>" (12 bytes) = 19 bytes.
-        // STRICTLY <= 31 bytes on all Android devices, preventing ADVERTISE_FAILED_DATA_TOO_LARGE.
+        // Service UUID 16-bit (4 bytes) + Tx Power (3 bytes) + Manufacturer Data (4 + 10 bytes) = 21 bytes <= 31 bytes.
         AdvertiseData primaryData = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(true)
                 .addServiceUuid(pUuid)
-                .addManufacturerData(PRESENCEGUARD_MANUFACTURER_ID, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
+                .addManufacturerData(PRESENCEGUARD_MANUFACTURER_ID, primaryPayload.getBytes(StandardCharsets.UTF_8))
                 .build();
 
-        // Scan response packet:
-        // Service Data with "PG_<courseCode>" under Institutional UUID.
-        // Avoid setIncludeDeviceName(true) which exceeds 31 bytes if phone's system name is long!
+        // Scan response packet carries: "sessionId#courseCode#teacherName" (e.g. "1#CS301#Prof. Rajesh")
+        String safeTeacher = teacherName != null ? teacherName.trim() : "Faculty";
+        if (safeTeacher.length() > 14) {
+            safeTeacher = safeTeacher.substring(0, 14);
+        }
+        String scanPayload = sessionId + "#" + courseCode + "#" + safeTeacher;
+
         AdvertiseData scanResponse = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
-                .addServiceData(pUuid, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
+                .addServiceData(pUuid, scanPayload.getBytes(StandardCharsets.UTF_8))
                 .build();
 
         advertiseCallback = new AdvertiseCallback() {
