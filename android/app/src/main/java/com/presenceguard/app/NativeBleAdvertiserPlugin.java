@@ -27,6 +27,7 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 @CapacitorPlugin(
     name = "NativeBleAdvertiser",
@@ -160,30 +161,34 @@ public class NativeBleAdvertiserPlugin extends Plugin {
             isAdvertising = false;
         }
 
-        // Low latency (100ms interval) + High Tx Power for maximum presence accuracy
-        // Non-connectable beacon mode: zero connection contention, guaranteed continuous broadcasting
+        // Connectable advertising mode ensures maximum compatibility with all Android scanner chipsets
+        // and enables Scan Response handling over the air.
         AdvertiseSettings settings = new AdvertiseSettings.Builder()
                 .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
                 .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-                .setConnectable(false)
+                .setConnectable(true)
                 .setTimeout(0)
                 .build();
 
+        ParcelUuid pUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
+
         // Primary packet:
-        // Tx Power (3 bytes) + Manufacturer Data 0x1337 "PG_<courseCode>" (12 bytes) + Flags (3 bytes) = 18 bytes.
+        // Service UUID 16-bit (4 bytes) + Tx Power (3 bytes) + Manufacturer Data 0x1337 "PG_<courseCode>" (12 bytes) = 19 bytes.
         // STRICTLY <= 31 bytes on all Android devices, preventing ADVERTISE_FAILED_DATA_TOO_LARGE.
         AdvertiseData primaryData = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(true)
+                .addServiceUuid(pUuid)
                 .addManufacturerData(PRESENCEGUARD_MANUFACTURER_ID, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
                 .build();
 
         // Scan response packet:
-        // Includes Device Name "PG_<courseCode>" (10 bytes <= 31 bytes).
-        // Scanners requesting active scans will instantly receive the device name.
+        // Service Data with "PG_<courseCode>" under Institutional UUID.
+        // Avoid setIncludeDeviceName(true) which exceeds 31 bytes if phone's system name is long!
         AdvertiseData scanResponse = new AdvertiseData.Builder()
-                .setIncludeDeviceName(true)
+                .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
+                .addServiceData(pUuid, ("PG_" + courseCode).getBytes(StandardCharsets.UTF_8))
                 .build();
 
         advertiseCallback = new AdvertiseCallback() {

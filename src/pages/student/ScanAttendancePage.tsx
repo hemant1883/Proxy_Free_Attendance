@@ -138,7 +138,7 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
           </div>
         ) : (
           activeSessions.map((session) => {
-            const hasDiscovered = discoveredDevice && discoveredDevice.sessionId === session.id;
+            const hasDiscovered = discoveredDevice && (discoveredDevice.sessionId === session.id || discoveredDevice.courseCode === session.courseCode || !discoveredDevice.courseCode);
             const rssiValue = discoveredDevice?.rssi ?? -55;
             const cat = getRSSICategory(rssiValue);
             const isEligible = rssiValue >= session.rssiThreshold;
