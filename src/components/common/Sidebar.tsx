@@ -132,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, onSelectTab }) => 
               <span className={`text-[10px] tracking-tight mt-0.5 line-clamp-1 ${
                 isActive ? 'font-bold text-blue-700' : 'font-medium'
               }`}>
-                {item.shortLabel || item.label}
+                {item.shortLabel}
               </span>
             </button>
           );

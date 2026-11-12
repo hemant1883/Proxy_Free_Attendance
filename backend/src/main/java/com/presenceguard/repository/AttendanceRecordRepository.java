@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface AttendanceRecordRepository extends JpaRepository<AttendanceRecord, Long> {
     List<AttendanceRecord> findByAttendanceSessionId(Long sessionId);
     List<AttendanceRecord> findByStudentIdOrderByTimestampDesc(Long studentId);
+    List<AttendanceRecord> findByAttendanceSessionTeacherIdOrderByTimestampDesc(Long teacherId);
     Optional<AttendanceRecord> findByAttendanceSessionIdAndStudentId(Long sessionId, Long studentId);
     boolean existsByAttendanceSessionIdAndStudentIdAndStatus(Long sessionId, Long studentId, AttendanceStatus status);
     long countByAttendanceSessionIdAndStatus(Long sessionId, AttendanceStatus status);

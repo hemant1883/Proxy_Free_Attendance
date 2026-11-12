@@ -1,5 +1,6 @@
 package com.presenceguard.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -7,6 +8,7 @@ import java.time.LocalDateTime;
 @Table(name = "attendance_records", uniqueConstraints = {
     @UniqueConstraint(columnNames = {"attendance_session_id", "student_id"})
 })
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AttendanceRecord {
 
     @Id

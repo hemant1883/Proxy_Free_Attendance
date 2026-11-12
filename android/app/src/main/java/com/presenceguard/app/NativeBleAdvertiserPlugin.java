@@ -172,31 +172,46 @@ public class NativeBleAdvertiserPlugin extends Plugin {
 
         ParcelUuid pUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
         int sessionId = call.getInt("sessionId", 1);
-        String teacherName = call.getString("teacherName", "Faculty");
+        String safeCourseCode = (courseCode != null ? courseCode.trim() : "CLASS").replaceAll("[:#]", "");
+        if (safeCourseCode.length() > 8) {
+            safeCourseCode = safeCourseCode.substring(0, 8);
+        }
 
-        // Primary packet carries: "PG:sessionId:courseCode" (e.g. "PG:1:CS301" = 10 bytes)
-        String primaryPayload = "PG:" + sessionId + ":" + courseCode;
+        // Primary packet max 31 bytes: Flags (3B) + UUID16 (4B) + ManufHeader (4B) = 11B -> 20B budget for payload
+        String primaryPayload = "PG:" + sessionId + ":" + safeCourseCode;
+        byte[] primaryBytes = primaryPayload.getBytes(StandardCharsets.UTF_8);
+        if (primaryBytes.length > 20) {
+            byte[] trimmed = new byte[20];
+            System.arraycopy(primaryBytes, 0, trimmed, 0, 20);
+            primaryBytes = trimmed;
+        }
 
-        // Primary packet:
-        // Service UUID 16-bit (4 bytes) + Tx Power (3 bytes) + Manufacturer Data (4 + 10 bytes) = 21 bytes <= 31 bytes.
         AdvertiseData primaryData = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
-                .setIncludeTxPowerLevel(true)
+                .setIncludeTxPowerLevel(false)
                 .addServiceUuid(pUuid)
-                .addManufacturerData(PRESENCEGUARD_MANUFACTURER_ID, primaryPayload.getBytes(StandardCharsets.UTF_8))
+                .addManufacturerData(PRESENCEGUARD_MANUFACTURER_ID, primaryBytes)
                 .build();
 
-        // Scan response packet carries: "sessionId#courseCode#teacherName" (e.g. "1#CS301#Prof. Rajesh")
-        String safeTeacher = teacherName != null ? teacherName.trim() : "Faculty";
-        if (safeTeacher.length() > 14) {
-            safeTeacher = safeTeacher.substring(0, 14);
+        // Scan response packet max 31 bytes: ServiceData Header (4B) -> 27B budget for payload
+        String prefix = sessionId + "#" + safeCourseCode + "#";
+        String safeTeacher = (teacherName != null ? teacherName.trim() : "Faculty").replace("#", " ");
+        int maxTeacherChars = Math.max(0, 27 - prefix.getBytes(StandardCharsets.UTF_8).length);
+        if (safeTeacher.length() > maxTeacherChars) {
+            safeTeacher = safeTeacher.substring(0, maxTeacherChars);
         }
-        String scanPayload = sessionId + "#" + courseCode + "#" + safeTeacher;
+        String scanPayload = prefix + safeTeacher;
+        byte[] scanBytes = scanPayload.getBytes(StandardCharsets.UTF_8);
+        if (scanBytes.length > 27) {
+            byte[] trimmedScan = new byte[27];
+            System.arraycopy(scanBytes, 0, trimmedScan, 0, 27);
+            scanBytes = trimmedScan;
+        }
 
         AdvertiseData scanResponse = new AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
                 .setIncludeTxPowerLevel(false)
-                .addServiceData(pUuid, scanPayload.getBytes(StandardCharsets.UTF_8))
+                .addServiceData(pUuid, scanBytes)
                 .build();
 
         advertiseCallback = new AdvertiseCallback() {

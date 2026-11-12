@@ -1,9 +1,11 @@
 package com.presenceguard.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 @Entity
 @Table(name = "courses")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Course {
 
     @Id

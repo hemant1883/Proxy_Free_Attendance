@@ -38,6 +38,8 @@ jobs:
         run: npm install --legacy-peer-deps
 
       - name: Build web application
+        env:
+          VITE_API_URL: https://presenceguard-backend.onrender.com
         run: npm run build
 
       - name: Sync Capacitor Android native project

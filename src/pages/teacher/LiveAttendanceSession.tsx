@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { api, getConfiguredServerOrigin, isExplicitOfflineMode } from '../../services/api';
 import { capacitorBLEService } from '../../services/ble/CapacitorBLEService';
 import { AttendanceSession, AttendanceRecord } from '../../types';
 import { RSSIIndicator, getRSSICategory } from '../../components/common/RSSIIndicator';
 import { 
   Radio, Square, Bluetooth, Users, ShieldCheck, 
-  AlertTriangle, RefreshCw, CheckCircle2, Clock, Signal 
+  AlertTriangle, RefreshCw, CheckCircle2, Clock, Signal, Cloud 
 } from 'lucide-react';
 
 interface LiveAttendanceSessionProps {
@@ -17,6 +18,7 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
   sessionId: initialSessionId,
   onSessionEnded
 }) => {
+  const { user } = useAuth();
   const [session, setSession] = useState<AttendanceSession | null>(null);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,14 +26,14 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
   const [isStartingBroadcast, setIsStartingBroadcast] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [deviceIdentifier, setDeviceIdentifier] = useState('Teacher_Device_001');
+  const autoStartedSessionRef = useRef<number | null>(null);
 
   // Find or fetch active session
   const fetchSession = async () => {
     try {
       let targetId = initialSessionId;
       if (!targetId) {
-        // Fallback: fetch active sessions
-        const activeList = await api.getActiveStudentSessions(1);
+        const activeList = await api.getActiveTeacherSessions(user?.teacherId);
         if (Array.isArray(activeList) && activeList.length > 0) {
           targetId = activeList[0].id;
         }
@@ -57,7 +59,38 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
     // Auto-refresh every 3 seconds
     const interval = setInterval(fetchSession, 3000);
     return () => clearInterval(interval);
-  }, [initialSessionId]);
+  }, [initialSessionId, user?.teacherId]);
+
+  // Automatically start BLE broadcast when entering a live active session
+  useEffect(() => {
+    if (!session || !session.active) return;
+    if (autoStartedSessionRef.current === session.id) return;
+    if (capacitorBLEService.isBroadcasting() && capacitorBLEService.getActiveBroadcast()?.sessionId === session.id) {
+      autoStartedSessionRef.current = session.id;
+      setIsBroadcasting(true);
+      return;
+    }
+
+    autoStartedSessionRef.current = session.id;
+    setIsStartingBroadcast(true);
+    setBroadcastError(null);
+    capacitorBLEService.startBroadcast({
+      sessionId: session.id,
+      courseCode: session.courseCode,
+      courseName: session.courseName,
+      teacherName: session.teacherName,
+      teacherDeviceId: `PG_${session.courseCode || 'CS301'}`,
+    }).then(() => {
+      setIsBroadcasting(true);
+    }).catch((err: any) => {
+      setIsBroadcasting(false);
+      setBroadcastError(
+        err?.message || 'BLE broadcast did not auto-start. Ensure Bluetooth & Nearby Devices permission are ON, then tap "Start BLE Broadcast".'
+      );
+    }).finally(() => {
+      setIsStartingBroadcast(false);
+    });
+  }, [session?.id, session?.active]);
 
   // Handle BLE Broadcast Toggle
   const handleToggleBroadcast = async () => {
@@ -251,10 +284,14 @@ export const LiveAttendanceSession: React.FC<LiveAttendanceSessionProps> = ({
                   )}
                 </div>
               </div>
-              <div className="text-right">
-                <span className="text-[11px] font-mono text-slate-400">
+              <div className="text-right space-y-1">
+                <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  <Cloud className="w-3 h-3" />
+                  <span>{isExplicitOfflineMode() ? 'Offline Local Mode' : `Synced: ${getConfiguredServerOrigin() || 'Cloud Server'}`}</span>
+                </div>
+                <div className="text-[11px] font-mono text-slate-400">
                   Protocol: Bluetooth Low Energy (BLE Peripheral Mode)
-                </span>
+                </div>
               </div>
             </div>
           </div>

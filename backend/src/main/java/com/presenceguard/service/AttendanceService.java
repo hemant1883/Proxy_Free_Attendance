@@ -16,7 +16,9 @@ import com.presenceguard.repository.StudentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
@@ -61,10 +63,10 @@ public class AttendanceService {
             throw new BadRequestException("Access Denied: Student is not enrolled in course " + session.getCourse().getCourseCode());
         }
 
-        // 4. Duplicate attendance check
-        boolean alreadyMarked = attendanceRecordRepository.existsByAttendanceSessionIdAndStudentIdAndStatus(
-                session.getId(), student.getId(), AttendanceStatus.PRESENT);
-        if (alreadyMarked) {
+        // 4. Check existing record (supports retrying after a REJECTED_WEAK_SIGNAL attempt)
+        Optional<AttendanceRecord> existingOpt = attendanceRecordRepository.findByAttendanceSessionIdAndStudentId(
+                session.getId(), student.getId());
+        if (existingOpt.isPresent() && existingOpt.get().getStatus() == AttendanceStatus.PRESENT) {
             throw new BadRequestException("Attendance has already been recorded for this session.");
         }
 
@@ -72,13 +74,16 @@ public class AttendanceService {
         int threshold = session.getRssiThreshold() != null ? session.getRssiThreshold() : -70;
 
         if (req.getRssi() < threshold) {
-            // Signal is too weak: persist rejection audit record in database
-            AttendanceRecord rejectedRecord = new AttendanceRecord(
+            // Signal is too weak: persist or update rejection audit record in database
+            AttendanceRecord rejectedRecord = existingOpt.orElseGet(() -> new AttendanceRecord(
                     session,
                     student,
                     req.getRssi(),
                     AttendanceStatus.REJECTED_WEAK_SIGNAL
-            );
+            ));
+            rejectedRecord.setRssi(req.getRssi());
+            rejectedRecord.setStatus(AttendanceStatus.REJECTED_WEAK_SIGNAL);
+            rejectedRecord.setTimestamp(LocalDateTime.now());
             attendanceRecordRepository.save(rejectedRecord);
 
             throw new BadRequestException(String.format(
@@ -86,13 +91,16 @@ public class AttendanceService {
                     req.getRssi(), threshold));
         }
 
-        // All 5 verification checks passed: Record PRESENT
-        AttendanceRecord record = new AttendanceRecord(
+        // All 5 verification checks passed: Record or update PRESENT
+        AttendanceRecord record = existingOpt.orElseGet(() -> new AttendanceRecord(
                 session,
                 student,
                 req.getRssi(),
                 AttendanceStatus.PRESENT
-        );
+        ));
+        record.setRssi(req.getRssi());
+        record.setStatus(AttendanceStatus.PRESENT);
+        record.setTimestamp(LocalDateTime.now());
         AttendanceRecord savedRecord = attendanceRecordRepository.save(record);
 
         return new AttendanceResponse(

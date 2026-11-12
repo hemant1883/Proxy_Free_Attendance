@@ -1,6 +1,7 @@
 package com.presenceguard.controller;
 
 import com.presenceguard.dto.SessionDetailsResponse;
+import com.presenceguard.entity.AttendanceRecord;
 import com.presenceguard.entity.AttendanceSession;
 import com.presenceguard.entity.Course;
 import com.presenceguard.entity.Student;
@@ -9,6 +10,7 @@ import com.presenceguard.service.TeacherService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,8 +31,11 @@ public class TeacherController {
     }
 
     @GetMapping("/courses")
-    public ResponseEntity<List<Course>> getAssignedCourses(@RequestParam(defaultValue = "1") Long teacherId) {
-        return ResponseEntity.ok(teacherService.getAssignedCourses(teacherId));
+    public ResponseEntity<List<Course>> getAssignedCourses(
+            @RequestParam(required = false) Long teacherId,
+            Authentication authentication) {
+        Long resolvedId = teacherService.resolveTeacherId(teacherId, authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(teacherService.getAssignedCourses(resolvedId));
     }
 
     @GetMapping("/courses/{courseId}/students")
@@ -38,16 +43,34 @@ public class TeacherController {
         return ResponseEntity.ok(teacherService.getEnrolledStudents(courseId));
     }
 
+    @GetMapping("/attendance/active")
+    public ResponseEntity<List<AttendanceSession>> getActiveSessions(
+            @RequestParam(required = false) Long teacherId,
+            Authentication authentication) {
+        Long resolvedId = teacherService.resolveTeacherId(teacherId, authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(teacherService.getActiveSessions(resolvedId));
+    }
+
+    @GetMapping("/attendance/history")
+    public ResponseEntity<List<AttendanceRecord>> getTeacherHistory(
+            @RequestParam(required = false) Long teacherId,
+            Authentication authentication) {
+        Long resolvedId = teacherService.resolveTeacherId(teacherId, authentication != null ? authentication.getName() : null);
+        return ResponseEntity.ok(teacherService.getTeacherHistory(resolvedId));
+    }
+
     @PostMapping("/attendance/start/{courseId}")
     public ResponseEntity<AttendanceSession> startAttendance(
             @PathVariable Long courseId,
-            @RequestBody(required = false) Map<String, Object> payload) {
+            @RequestBody(required = false) Map<String, Object> payload,
+            Authentication authentication) {
 
-        Long teacherId = payload != null && payload.containsKey("teacherId")
+        Long requestedId = payload != null && payload.get("teacherId") != null
                 ? Long.valueOf(payload.get("teacherId").toString())
-                : 1L;
+                : null;
+        Long teacherId = teacherService.resolveTeacherId(requestedId, authentication != null ? authentication.getName() : null);
 
-        Integer threshold = payload != null && payload.containsKey("rssiThreshold")
+        Integer threshold = payload != null && payload.get("rssiThreshold") != null
                 ? Integer.valueOf(payload.get("rssiThreshold").toString())
                 : -70;
 

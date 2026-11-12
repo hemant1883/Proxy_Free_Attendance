@@ -1,12 +1,15 @@
 package com.presenceguard.service;
 
+import com.presenceguard.entity.AttendanceRecord;
 import com.presenceguard.entity.AttendanceSession;
 import com.presenceguard.entity.Course;
 import com.presenceguard.entity.Student;
 import com.presenceguard.entity.Teacher;
+import com.presenceguard.entity.User;
 import com.presenceguard.exception.BadRequestException;
 import com.presenceguard.exception.ResourceNotFoundException;
 import com.presenceguard.repository.*;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,35 +22,75 @@ import java.util.stream.Collectors;
 public class TeacherService {
 
     private final TeacherRepository teacherRepository;
+    private final UserRepository userRepository;
     private final TeacherCourseRepository teacherCourseRepository;
     private final CourseRepository courseRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final AttendanceSessionRepository attendanceSessionRepository;
+    private final AttendanceRecordRepository attendanceRecordRepository;
 
     public TeacherService(TeacherRepository teacherRepository,
+                          UserRepository userRepository,
                           TeacherCourseRepository teacherCourseRepository,
                           CourseRepository courseRepository,
                           EnrollmentRepository enrollmentRepository,
-                          AttendanceSessionRepository attendanceSessionRepository) {
+                          AttendanceSessionRepository attendanceSessionRepository,
+                          AttendanceRecordRepository attendanceRecordRepository) {
         this.teacherRepository = teacherRepository;
+        this.userRepository = userRepository;
         this.teacherCourseRepository = teacherCourseRepository;
         this.courseRepository = courseRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.attendanceSessionRepository = attendanceSessionRepository;
+        this.attendanceRecordRepository = attendanceRecordRepository;
     }
 
+    public Long resolveTeacherId(Long requestedTeacherId, String authenticatedEmail) {
+        if (authenticatedEmail != null) {
+            Long authTeacherId = userRepository.findByEmail(authenticatedEmail)
+                    .flatMap(u -> teacherRepository.findByUserId(u.getId()))
+                    .map(Teacher::getId)
+                    .orElse(null);
+            if (authTeacherId != null) {
+                return authTeacherId;
+            }
+        }
+        if (requestedTeacherId != null && requestedTeacherId > 0 && teacherRepository.existsById(requestedTeacherId)) {
+            return requestedTeacherId;
+        }
+        return teacherRepository.findAll().stream().findFirst().map(Teacher::getId).orElse(requestedTeacherId);
+    }
+
+    @Transactional(readOnly = true)
     public List<Course> getAssignedCourses(Long teacherId) {
         return teacherCourseRepository.findByTeacherId(teacherId)
                 .stream()
-                .map(tc -> tc.getCourse())
+                .map(tc -> (Course) Hibernate.unproxy(tc.getCourse()))
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public List<Student> getEnrolledStudents(Long courseId) {
         return enrollmentRepository.findByCourseId(courseId)
                 .stream()
-                .map(e -> e.getStudent())
+                .map(e -> (Student) Hibernate.unproxy(e.getStudent()))
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttendanceSession> getActiveSessions(Long teacherId) {
+        if (teacherId != null && teacherId > 0) {
+            return attendanceSessionRepository.findByTeacherIdAndActiveTrueOrderByStartTimeDesc(teacherId);
+        }
+        return attendanceSessionRepository.findByActiveTrue();
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttendanceRecord> getTeacherHistory(Long teacherId) {
+        if (teacherId != null && teacherId > 0) {
+            return attendanceRecordRepository.findByAttendanceSessionTeacherIdOrderByTimestampDesc(teacherId);
+        }
+        return attendanceRecordRepository.findAll();
     }
 
     @Transactional

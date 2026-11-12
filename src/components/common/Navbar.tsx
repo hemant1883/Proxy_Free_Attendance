@@ -13,9 +13,13 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [serverModalOpen, setServerModalOpen] = useState(false);
 
-  const handleRoleSelect = (r: UserRole) => {
-    quickSwitch(r);
+  const handleRoleSelect = async (r: UserRole) => {
     setMobileMenuOpen(false);
+    try {
+      await quickSwitch(r);
+    } catch (err: any) {
+      alert(err?.message || `Failed to switch to ${r}`);
+    }
   };
 
   return (
@@ -59,7 +63,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenDocs }) => {
                   return (
                     <button
                       key={r}
-                      onClick={() => quickSwitch(r)}
+                      onClick={() => handleRoleSelect(r)}
                       className={`px-2.5 py-1 rounded font-semibold text-[11px] transition-all ${
                         isActive
                           ? 'bg-blue-600 text-white shadow-xs'

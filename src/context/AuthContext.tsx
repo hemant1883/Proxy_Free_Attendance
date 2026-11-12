@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { UserRole, AuthResponse } from '../types';
-import { api } from '../services/api';
+import { api, isExplicitOfflineMode } from '../services/api';
 import { mockDb } from '../services/mockDatabase';
 
 interface AuthContextType {
@@ -25,11 +25,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedUser = localStorage.getItem('presenceguard_user');
     const savedToken = localStorage.getItem('presenceguard_token');
     if (savedUser && savedToken) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch {
+      // Clear stale offline mock sessions when running in live server mode so user gets a real JWT
+      if (!isExplicitOfflineMode() && savedToken.startsWith('mock_jwt_token_')) {
         localStorage.removeItem('presenceguard_user');
         localStorage.removeItem('presenceguard_token');
+      } else {
+        try {
+          setUser(JSON.parse(savedUser));
+        } catch {
+          localStorage.removeItem('presenceguard_user');
+          localStorage.removeItem('presenceguard_token');
+        }
       }
     }
     setIsLoading(false);

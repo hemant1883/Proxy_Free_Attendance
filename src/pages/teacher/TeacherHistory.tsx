@@ -11,8 +11,8 @@ export const TeacherHistory: React.FC<{ onSelectSession: (id: number) => void }>
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const all = await api.getAllAttendance();
-        setRecords(all);
+        const all = await api.getTeacherHistory(user?.teacherId);
+        setRecords(Array.isArray(all) ? all : []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -20,7 +20,7 @@ export const TeacherHistory: React.FC<{ onSelectSession: (id: number) => void }>
       }
     };
     fetchHistory();
-  }, []);
+  }, [user?.teacherId]);
 
   return (
     <div className="space-y-6">

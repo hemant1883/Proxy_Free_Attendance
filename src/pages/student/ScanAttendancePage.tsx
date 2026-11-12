@@ -1,25 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { api } from '../../services/api';
-import { mockBLEService } from '../../services/ble/MockBLEService';
-import { capacitorBLEService } from '../../services/ble/CapacitorBLEService';
+import { api, getConfiguredServerOrigin, isExplicitOfflineMode } from '../../services/api';
+import { capacitorBLEService, BLEScanDiagnostics } from '../../services/ble/CapacitorBLEService';
 import { AttendanceSession, BLEDiscoveredDevice } from '../../types';
 import { RSSIIndicator, getRSSICategory } from '../../components/common/RSSIIndicator';
-import { 
-  Radio, Bluetooth, ShieldCheck, AlertTriangle, 
-  CheckCircle2, Loader2, RefreshCw, Smartphone, 
-  ArrowRight, XCircle 
+import {
+  Radio, Bluetooth, ShieldCheck, AlertTriangle,
+  CheckCircle2, Loader2, RefreshCw, Cloud,
+  ArrowRight, XCircle
 } from 'lucide-react';
 
 export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }> = ({ onNavigate }) => {
   const { user } = useAuth();
   const [activeSessions, setActiveSessions] = useState<AttendanceSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Scanning State
   const [isScanning, setIsScanning] = useState(false);
   const [discoveredDevice, setDiscoveredDevice] = useState<BLEDiscoveredDevice | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanDiagnostics, setScanDiagnostics] = useState<BLEScanDiagnostics | null>(null);
 
   // Submitting Attendance State
   const [submitting, setSubmitting] = useState(false);
@@ -34,10 +35,12 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
 
   const fetchActiveSessions = async () => {
     try {
-      const data = await api.getActiveStudentSessions(studentId);
+      const data = await api.getActiveStudentSessions(user?.studentId);
       setActiveSessions(Array.isArray(data) ? data : []);
-    } catch (err) {
+      setSyncError(null);
+    } catch (err: any) {
       console.error(err);
+      setSyncError(err?.message || 'Unable to sync active sessions from server.');
     } finally {
       setLoading(false);
     }
@@ -47,31 +50,46 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     fetchActiveSessions();
     const interval = setInterval(fetchActiveSessions, 4000);
     return () => clearInterval(interval);
-  }, [studentId]);
+  }, [user?.studentId]);
 
-  // Handle Scan for Teacher Beacon
-  const handleScanForTeacher = async (session: AttendanceSession) => {
+  // Handle Scan for Teacher Beacon (either for a known session or open discovery when activeSessions is empty)
+  const handleScanForTeacher = async (session?: AttendanceSession) => {
     setIsScanning(true);
     setScanError(null);
     setDiscoveredDevice(null);
     setSubmissionResult(null);
+    setScanDiagnostics(null);
 
     try {
-      // Calls BLEService.scanForTeacher() - Uses hardware BLE on Android, fallback to cloud session when teacher is on PC
-      const device = await capacitorBLEService.scanForTeacher({ 
-        courseCode: session.courseCode,
-        sessionId: session.id,
-        teacherName: session.teacherName
-      });
+      const device = await capacitorBLEService.scanForTeacher(
+        session
+          ? {
+              courseCode: session.courseCode,
+              courseName: session.courseName,
+              sessionId: session.id,
+              teacherName: session.teacherName
+            }
+          : { timeoutMs: 10000 }
+      );
+
+      const diag = capacitorBLEService.getLastScanDiagnostics();
+      setScanDiagnostics(diag);
 
       if (!device) {
+        const packetInfo =
+          diag.totalPacketsSeen > 0
+            ? ` (Scanner detected ${diag.totalPacketsSeen} BLE packets from ${diag.uniqueDevicesSeen} nearby devices, none broadcasting PresenceGuard 0xFEAA — ensure Teacher started BLE Broadcast.)`
+            : ' (Scanner saw 0 BLE packets — check that Bluetooth & Location GPS are ON and Nearby Devices permission is granted.)';
         setScanError(
-          'No classroom BLE beacon detected. Ensure teacher broadcast is running, keep devices close (<2m), and verify Location (GPS) is turned ON in Quick Settings.'
+          `No classroom BLE beacon detected. Keep devices within classroom range (<5m), confirm Teacher tapped "Start BLE Broadcast", and ensure Location (GPS) is ON.${packetInfo}`
         );
       } else {
         setDiscoveredDevice(device);
+        // Refresh backend active sessions in case Teacher started the session right before the poll cycle
+        fetchActiveSessions();
       }
     } catch (err: any) {
+      setScanDiagnostics(capacitorBLEService.getLastScanDiagnostics());
       setScanError(err.message || 'Scanning failed. Please check Bluetooth & Location permissions.');
     } finally {
       setIsScanning(false);
@@ -87,7 +105,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     const targetSessionId = discoveredDevice.sessionId || session.id;
 
     try {
-      // POST /api/attendance/mark
       const response = await api.markAttendance(
         targetSessionId,
         studentId,
@@ -113,6 +130,28 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
     }
   };
 
+  // If BLE discovered a live beacon even when activeSessions list hadn't populated yet, construct a card session
+  const displaySessions: AttendanceSession[] =
+    activeSessions.length > 0
+      ? activeSessions
+      : discoveredDevice
+      ? [
+          {
+            id: discoveredDevice.sessionId,
+            courseId: 0,
+            teacherId: 0,
+            courseCode: discoveredDevice.courseCode || 'BLE',
+            courseName: discoveredDevice.courseName || 'Classroom Lecture',
+            teacherName: discoveredDevice.teacherName || 'Classroom Faculty',
+            sessionCode: `SESSION-${discoveredDevice.sessionId}`,
+            startTime: new Date().toISOString(),
+            endTime: null,
+            active: true,
+            rssiThreshold: -70
+          }
+        ]
+      : [];
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -123,24 +162,90 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
             Detect the teacher's physical BLE broadcast and verify your spatial presence inside the lecture hall.
           </p>
         </div>
+        <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 self-start sm:self-auto">
+          <Cloud className="w-3.5 h-3.5 text-blue-600" />
+          <span>{isExplicitOfflineMode() ? 'Offline Local Mode' : `Server: ${getConfiguredServerOrigin() || 'Cloud Backend'}`}</span>
+        </div>
       </div>
+
+      {/* Sync Warning if server unreachable */}
+      {syncError && (
+        <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>{syncError}</span>
+          </div>
+          <button
+            onClick={fetchActiveSessions}
+            className="text-xs font-semibold text-amber-800 underline shrink-0"
+          >
+            Retry Sync
+          </button>
+        </div>
+      )}
 
       {/* Active Sessions List */}
       <div className="space-y-4">
         {loading ? (
-          <div className="text-center py-8 text-xs text-slate-400">Checking active sessions...</div>
-        ) : activeSessions.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center space-y-3">
-            <Radio className="w-10 h-10 text-slate-300 mx-auto" />
-            <h3 className="text-base font-bold text-slate-800">No Active Attendance Session</h3>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              There are currently no active attendance broadcasts for your enrolled courses. 
-              Switch to the <span className="font-semibold text-blue-600">Teacher</span> portal in the top bar to start one.
-            </p>
+          <div className="text-center py-8 text-xs text-slate-400">Checking active sessions on shared server...</div>
+        ) : displaySessions.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-200 p-6 sm:p-8 text-center space-y-4">
+            <Radio className="w-10 h-10 text-blue-500 mx-auto" />
+            <div className="space-y-1">
+              <h3 className="text-base font-bold text-slate-800">No Active Session Listed Yet</h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Your teacher may have just started broadcasting. You can still scan directly for any nearby classroom BLE beacon right now:
+              </p>
+            </div>
+
+            {isScanning ? (
+              <div className="py-4 space-y-3">
+                <div className="relative w-14 h-14 mx-auto flex items-center justify-center">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-30"></span>
+                  <div className="relative w-11 h-11 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-md">
+                    <Radio className="w-5 h-5 animate-pulse" />
+                  </div>
+                </div>
+                <p className="text-xs font-semibold text-slate-700 animate-pulse">
+                  Scanning nearby BLE beacons (2.4 GHz)...
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-center gap-2.5">
+                <button
+                  onClick={() => handleScanForTeacher()}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors"
+                >
+                  <Bluetooth className="w-4 h-4" />
+                  <span>Scan For Live Classroom Beacon</span>
+                </button>
+                <button
+                  onClick={fetchActiveSessions}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Refresh Sessions</span>
+                </button>
+              </div>
+            )}
+
+            {scanError && (
+              <div className="mt-4 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs text-left space-y-1.5">
+                <div className="flex items-center gap-2 font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>No Classroom Beacon Found</span>
+                </div>
+                <p className="text-slate-700">{scanError}</p>
+              </div>
+            )}
           </div>
         ) : (
-          activeSessions.map((session) => {
-            const hasDiscovered = discoveredDevice && (discoveredDevice.sessionId === session.id || discoveredDevice.courseCode === session.courseCode || !discoveredDevice.courseCode);
+          displaySessions.map((session) => {
+            const hasDiscovered =
+              discoveredDevice &&
+              (discoveredDevice.sessionId === session.id ||
+                discoveredDevice.courseCode === session.courseCode ||
+                !discoveredDevice.courseCode);
             const rssiValue = discoveredDevice?.rssi ?? -55;
             const cat = getRSSICategory(rssiValue);
             const isEligible = rssiValue >= session.rssiThreshold;
@@ -159,7 +264,7 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                     <span className="font-bold text-sm">{session.courseName}</span>
                   </div>
                   <span className="text-[11px] text-slate-300 font-mono">
-                    Session Code: {session.sessionCode}
+                    Session #{session.id} ({session.sessionCode})
                   </span>
                 </div>
 
@@ -200,7 +305,7 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                     </div>
                   )}
 
-                  {/* Scanning Animation (Prompt Requirement: "Searching for classroom BLE signal...") */}
+                  {/* Scanning Animation */}
                   {isScanning && (
                     <div className="text-center py-8 space-y-4">
                       <div className="relative w-16 h-16 mx-auto flex items-center justify-center">
@@ -228,6 +333,11 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                         <span>No Classroom Beacon Found</span>
                       </div>
                       <p className="text-slate-600">{scanError}</p>
+                      {scanDiagnostics && (
+                        <div className="text-[11px] font-mono text-rose-700 bg-rose-100/70 px-2.5 py-1 rounded">
+                          Diagnostics: packets={scanDiagnostics.totalPacketsSeen}, nearbyDevices={scanDiagnostics.uniqueDevicesSeen}
+                        </div>
+                      )}
                       <button
                         onClick={() => handleScanForTeacher(session)}
                         className="mt-2 text-xs font-semibold text-rose-700 underline inline-flex items-center gap-1"
@@ -237,10 +347,9 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                     </div>
                   )}
 
-                  {/* Teacher Device Found (Prompt Requirements 8, 9, 10) */}
+                  {/* Teacher Device Found */}
                   {hasDiscovered && (
                     <div className="space-y-5 animate-in fade-in duration-300">
-                      {/* Detection Banner */}
                       <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -255,9 +364,7 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                           </span>
                         </div>
 
-                        {/* Scanned Broadcast & Instructor Verification Details */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t border-slate-200">
-                          {/* Verified Course Name & Code */}
                           <div className="sm:col-span-2 lg:col-span-1">
                             <span className="text-[11px] text-slate-500 font-medium">Broadcasting Course:</span>
                             <div className="font-bold text-slate-900 text-xs mt-0.5 flex items-center gap-1.5">
@@ -268,7 +375,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                             </div>
                           </div>
 
-                          {/* Faculty / Instructor */}
                           <div>
                             <span className="text-[11px] text-slate-500 font-medium">Faculty Instructor:</span>
                             <div className="font-bold text-slate-900 text-xs mt-0.5 truncate">
@@ -276,7 +382,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                             </div>
                           </div>
 
-                          {/* Broadcast Session ID */}
                           <div>
                             <span className="text-[11px] text-slate-500 font-medium">Broadcast Session ID:</span>
                             <div className="font-mono font-bold text-blue-700 text-xs mt-0.5">
@@ -284,7 +389,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                             </div>
                           </div>
 
-                          {/* Measured RSSI Antenna Signal */}
                           <div>
                             <span className="text-[11px] text-slate-500 font-medium">Measured Signal (RSSI):</span>
                             <div className="font-mono font-bold text-slate-900 text-xs mt-0.5 flex items-center gap-2">
@@ -295,7 +399,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                             </div>
                           </div>
 
-                          {/* Hardware Device MAC Address */}
                           <div>
                             <span className="text-[11px] text-slate-500 font-medium">Transmitter Hardware:</span>
                             <div className="font-mono text-slate-600 text-[11px] mt-0.5 truncate">
@@ -303,7 +406,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                             </div>
                           </div>
 
-                          {/* Presence Verification Eligibility */}
                           <div>
                             <span className="text-[11px] text-slate-500 font-medium">Presence Verification:</span>
                             <div className="mt-0.5">
@@ -322,7 +424,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                           </div>
                         </div>
 
-                        {/* Visual Signal Level Indicator */}
                         <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
                           <RSSIIndicator rssi={discoveredDevice.rssi} size="md" />
                           <button
@@ -334,7 +435,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                         </div>
                       </div>
 
-                      {/* Prompt RSSI Logic Banner */}
                       {isEligible ? (
                         <div className="p-3.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2">
                           <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -351,7 +451,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                         </div>
                       )}
 
-                      {/* Submission Result Feedback */}
                       {submissionResult && (
                         <div
                           className={`p-4 rounded-xl border text-xs ${
@@ -388,7 +487,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
                         </div>
                       )}
 
-                      {/* Action Button: Mark Attendance */}
                       {!submissionResult?.success && (
                         <div className="flex items-center justify-end gap-3 pt-2">
                           <button
@@ -422,7 +520,6 @@ export const ScanAttendancePage: React.FC<{ onNavigate: (tab: string) => void }>
           })
         )}
       </div>
-
     </div>
   );
 };

@@ -1,10 +1,12 @@
 package com.presenceguard.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "attendance_sessions")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class AttendanceSession {
 
     @Id

@@ -74,6 +74,7 @@ export const StudentsManagement: React.FC = () => {
         await api.createStudent({
           name,
           email,
+          password: password || 'student123',
           rollNumber,
           department,
           semester: Number(semester)

@@ -1,5 +1,6 @@
 package com.presenceguard.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
@@ -7,17 +8,18 @@ import java.time.LocalDateTime;
 @Table(name = "teacher_courses", uniqueConstraints = {
     @UniqueConstraint(columnNames = {"teacher_id", "course_id"})
 })
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class TeacherCourse {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "teacher_id", nullable = false)
     private Teacher teacher;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "course_id", nullable = false)
     private Course course;
 

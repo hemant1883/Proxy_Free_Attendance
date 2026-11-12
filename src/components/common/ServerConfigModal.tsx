@@ -1,6 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Wifi, CheckCircle2, XCircle, AlertCircle, RefreshCw, X, Globe, Smartphone } from 'lucide-react';
+import { Server, CheckCircle2, XCircle, AlertCircle, RefreshCw, X, Globe, Smartphone } from 'lucide-react';
 import axios from 'axios';
+import {
+  DEFAULT_CLOUD_BACKEND_URL,
+  getConfiguredServerOrigin,
+  isExplicitOfflineMode
+} from '../../services/api';
 
 interface ServerConfigModalProps {
   isOpen: boolean;
@@ -14,14 +19,19 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
 
   useEffect(() => {
     const saved = localStorage.getItem('presenceguard_api_url') || '';
-    setServerUrl(saved);
+    if (saved === 'OFFLINE') {
+      setServerUrl('');
+    } else {
+      setServerUrl(saved || DEFAULT_CLOUD_BACKEND_URL);
+    }
+    setTestResult(null);
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const handleTestConnection = async () => {
     if (!serverUrl.trim()) {
-      setTestResult({ success: false, message: 'Please enter a valid URL first (e.g. http://192.168.1.15:8080 or https://your-app.onrender.com)' });
+      setTestResult({ success: false, message: 'Please enter a valid URL first (e.g. https://presenceguard-backend.onrender.com or http://192.168.1.15:8080)' });
       return;
     }
 
@@ -30,11 +40,10 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
 
     const cleanUrl = serverUrl.trim().replace(/\/$/, '');
     try {
-      // Test ping to /api or base URL
-      const res = await axios.get(`${cleanUrl}/api/sessions/active`, { timeout: 6000 });
+      const res = await axios.get(`${cleanUrl}/api/auth/health`, { timeout: 30000 });
       setTestResult({
         success: true,
-        message: `Connected successfully! (Server responded with HTTP ${res.status})`
+        message: `Connected successfully! Backend responded with HTTP ${res.status} (${res.data?.status || 'UP'})`
       });
     } catch (err: any) {
       if (err.response) {
@@ -45,7 +54,7 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
       } else {
         setTestResult({
           success: false,
-          message: `Could not reach server: ${err.message}. Make sure phones and computer are on the same Wi-Fi and firewall allows port 8080.`
+          message: `Could not reach server: ${err.message}. If using Render free tier, it may take ~30s to wake up.`
         });
       }
     } finally {
@@ -62,13 +71,19 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
     window.location.reload();
   };
 
-  const handleClear = () => {
+  const handleUseDefaultCloud = () => {
     localStorage.removeItem('presenceguard_api_url');
-    setServerUrl('');
+    setServerUrl(DEFAULT_CLOUD_BACKEND_URL);
     window.location.reload();
   };
 
-  const isConfigured = !!localStorage.getItem('presenceguard_api_url');
+  const handleUseOffline = () => {
+    localStorage.setItem('presenceguard_api_url', 'OFFLINE');
+    window.location.reload();
+  };
+
+  const offlineMode = isExplicitOfflineMode();
+  const activeOrigin = getConfiguredServerOrigin() || 'Cloud / Proxy (/api)';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
@@ -94,29 +109,32 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
 
         {/* Content */}
         <div className="p-6 space-y-5">
-          {/* Why sync is needed explanation */}
+          {/* Explanation */}
           <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 text-xs space-y-1.5">
             <div className="font-bold flex items-center gap-1.5 text-blue-900">
               <Smartphone className="w-4 h-4" />
-              <span>Why Student marking doesn't show on Teacher's phone yet:</span>
+              <span>Multi-Device Attendance Sync:</span>
             </div>
             <p className="text-slate-700 leading-relaxed">
-              BLE is a broadcast beacon (proximity proof). When a student marks attendance, the record must be posted to a <strong>shared backend database</strong> so the teacher's phone can display it. Without a server, each phone stores records in its own offline memory.
+              Both Teacher and Student devices automatically sync through the shared Spring Boot + TiDB server (<code className="font-mono text-[11px]">{DEFAULT_CLOUD_BACKEND_URL}</code>). You can also point to a local Wi-Fi Spring Boot server below.
             </p>
           </div>
 
           {/* Current Status */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-            <span className="text-slate-600 font-medium">Current Connection Mode:</span>
-            {isConfigured ? (
-              <span className="font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Live Cloud / LAN Server
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
+            <div>
+              <span className="text-slate-600 font-medium block">Active Connection:</span>
+              <span className="font-mono text-[11px] text-slate-500">{offlineMode ? 'Offline Local Memory' : activeOrigin}</span>
+            </div>
+            {offlineMode ? (
+              <span className="font-semibold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full flex items-center gap-1 self-start sm:self-center">
+                <AlertCircle className="w-3.5 h-3.5" />
+                Single-Device Offline
               </span>
             ) : (
-              <span className="font-semibold text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                <AlertCircle className="w-3.5 h-3.5" />
-                Offline Device Memory Only
+              <span className="font-semibold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full flex items-center gap-1 self-start sm:self-center">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Shared Live Server
               </span>
             )}
           </div>
@@ -124,21 +142,18 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
           {/* Server URL Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">
-              Shared Backend Server URL (HTTP/HTTPS):
+              Backend Server URL (HTTP/HTTPS):
             </label>
             <div className="relative">
               <input
                 type="text"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="e.g. https://your-backend.onrender.com or http://192.168.1.15:8080"
+                placeholder={DEFAULT_CLOUD_BACKEND_URL}
                 className="w-full px-3.5 py-2.5 text-xs font-mono bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10"
               />
               <Globe className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
             </div>
-            <p className="text-[11px] text-slate-500">
-              Tip: Enter your laptop's Wi-Fi IP (e.g. <code className="font-mono bg-slate-100 px-1 py-0.5 rounded">http://192.168.x.x:8080</code>) or your Render cloud URL.
-            </p>
           </div>
 
           {/* Test connection result */}
@@ -158,7 +173,7 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
           )}
 
           {/* Actions */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200">
             <button
               type="button"
               onClick={handleTestConnection}
@@ -169,16 +184,21 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
               <span>{testing ? 'Testing...' : 'Test Connection'}</span>
             </button>
 
-            <div className="flex items-center gap-2">
-              {isConfigured && (
-                <button
-                  type="button"
-                  onClick={handleClear}
-                  className="px-3 py-2 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-lg transition-colors"
-                >
-                  Clear & Use Offline
-                </button>
-              )}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleUseOffline}
+                className="px-3 py-2 text-amber-700 hover:bg-amber-50 text-xs font-semibold rounded-lg transition-colors"
+              >
+                Offline Mode
+              </button>
+              <button
+                type="button"
+                onClick={handleUseDefaultCloud}
+                className="px-3 py-2 text-slate-700 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg transition-colors"
+              >
+                Default Cloud
+              </button>
               <button
                 type="button"
                 onClick={handleSave}
@@ -193,4 +213,3 @@ export const ServerConfigModal: React.FC<ServerConfigModalProps> = ({ isOpen, on
     </div>
   );
 };
-

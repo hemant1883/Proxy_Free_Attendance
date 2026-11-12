@@ -5,6 +5,7 @@ import com.presenceguard.repository.*;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 
 @Configuration
 public class DatabaseSeeder implements CommandLineRunner {
@@ -33,81 +34,94 @@ public class DatabaseSeeder implements CommandLineRunner {
         this.passwordEncoder = passwordEncoder;
     }
 
-    @Override
-    public void run(String... args) {
-        if (userRepository.count() == 0) {
-            // 1. Admin User
-            User adminUser = new User("System Administrator", "admin@college.com", passwordEncoder.encode("admin123"), UserRole.ADMIN);
-            userRepository.save(adminUser);
+    private Course ensureCourse(String code, String name, int semester) {
+        return courseRepository.findByCourseCode(code)
+                .orElseGet(() -> courseRepository.save(new Course(code, name, semester)));
+    }
 
-            // 2. Teacher User & Profile
-            User teacherUser = new User("Prof. Rajesh Sharma", "teacher@college.com", passwordEncoder.encode("teacher123"), UserRole.TEACHER);
-            userRepository.save(teacherUser);
-            Teacher teacher = new Teacher(teacherUser, "EMP-CSE-104", "Computer Science");
-            teacherRepository.save(teacher);
-
-            // 3. Student User & Profile
-            User studentUser = new User("Hemant Singh", "student@college.com", passwordEncoder.encode("student123"), UserRole.STUDENT);
-            userRepository.save(studentUser);
-            Student student = new Student(studentUser, "21CSE101", "Computer Science", 6);
-            studentRepository.save(student);
-
-            // Additional sample students
-            User studentUser2 = new User("Priya Sharma", "priya@college.com", passwordEncoder.encode("student123"), UserRole.STUDENT);
-            userRepository.save(studentUser2);
-            Student student2 = new Student(studentUser2, "21CSE102", "Computer Science", 6);
-            studentRepository.save(student2);
-
-            // 4. Sample Courses
-            Course course1 = new Course("CS301", "Java Programming", 6);
-            Course course2 = new Course("CS302", "Database Management Systems", 6);
-            Course course3 = new Course("CS303", "Computer Networks", 6);
-            courseRepository.save(course1);
-            courseRepository.save(course2);
-            courseRepository.save(course3);
-
-            // 5. Assign Teacher to CS301 & CS302
-            teacherCourseRepository.save(new TeacherCourse(teacher, course1));
-            teacherCourseRepository.save(new TeacherCourse(teacher, course2));
-
-            // 6. Enroll Students into CS301
-            enrollmentRepository.save(new Enrollment(student, course1));
-            enrollmentRepository.save(new Enrollment(student, course2));
-            enrollmentRepository.save(new Enrollment(student2, course1));
-        }
-
-        // 7. Ensure CS304 Compiler Design Course exists
-        Course compilerDesignCourse = courseRepository.findByCourseCode("CS304").orElseGet(() -> {
-            return courseRepository.save(new Course("CS304", "Compiler Design", 6));
-        });
-
-        // 8. Ensure BCA Teacher (Prof. Alok Verma) exists
-        if (!userRepository.existsByEmail("teacher.bca@college.com")) {
-            User bcaTeacherUser = new User("Prof. Alok Verma", "teacher.bca@college.com", passwordEncoder.encode("teacher123"), UserRole.TEACHER);
-            userRepository.save(bcaTeacherUser);
-            Teacher bcaTeacher = new Teacher(bcaTeacherUser, "EMP-BCA-201", "BCA / Computer Applications");
-            teacherRepository.save(bcaTeacher);
-            teacherCourseRepository.save(new TeacherCourse(bcaTeacher, compilerDesignCourse));
-        }
-
-        // 9. Ensure Student Om exists (Classmate of Hemant in Semester 6)
-        if (!userRepository.existsByEmail("om@college.com")) {
-            User omUser = new User("Om Bijwe", "om@college.com", passwordEncoder.encode("student123"), UserRole.STUDENT);
-            userRepository.save(omUser);
-            Student omStudent = new Student(omUser, "21CSE105", "Computer Science", 6);
-            studentRepository.save(omStudent);
-            enrollmentRepository.save(new Enrollment(omStudent, compilerDesignCourse));
-            courseRepository.findByCourseCode("CS301").ifPresent(c1 -> enrollmentRepository.save(new Enrollment(omStudent, c1)));
-            courseRepository.findByCourseCode("CS302").ifPresent(c2 -> enrollmentRepository.save(new Enrollment(omStudent, c2)));
-        }
-
-        // Ensure Hemant is also enrolled in Compiler Design
-        userRepository.findByEmail("student@college.com").flatMap(u -> studentRepository.findByUserId(u.getId())).ifPresent(hemant -> {
-            if (!enrollmentRepository.existsByStudentIdAndCourseId(hemant.getId(), compilerDesignCourse.getId())) {
-                enrollmentRepository.save(new Enrollment(hemant, compilerDesignCourse));
+    private User ensureUser(String name, String email, String rawPassword, UserRole role) {
+        return userRepository.findByEmail(email).map(existing -> {
+            if (!passwordEncoder.matches(rawPassword, existing.getPassword())) {
+                existing.setPassword(passwordEncoder.encode(rawPassword));
+                return userRepository.save(existing);
             }
-        });
+            return existing;
+        }).orElseGet(() -> userRepository.save(new User(name, email, passwordEncoder.encode(rawPassword), role)));
+    }
 
-        System.out.println(">>> [PresenceGuard] Database successfully seeded with Compiler Design & BCA accounts (Prof. Alok Verma & Om).");
+    private Teacher ensureTeacher(User user, String employeeId, String department) {
+        return teacherRepository.findByUserId(user.getId()).orElseGet(() -> {
+            String safeEmpId = teacherRepository.existsByEmployeeId(employeeId)
+                    ? employeeId + "-" + user.getId()
+                    : employeeId;
+            return teacherRepository.save(new Teacher(user, safeEmpId, department));
+        });
+    }
+
+    private Student ensureStudent(User user, String rollNumber, String department, int semester) {
+        return studentRepository.findByUserId(user.getId()).orElseGet(() -> {
+            String safeRoll = studentRepository.existsByRollNumber(rollNumber)
+                    ? rollNumber + "-" + user.getId()
+                    : rollNumber;
+            return studentRepository.save(new Student(user, safeRoll, department, semester));
+        });
+    }
+
+    private void ensureTeacherCourse(Teacher teacher, Course course) {
+        if (!teacherCourseRepository.existsByTeacherIdAndCourseId(teacher.getId(), course.getId())) {
+            teacherCourseRepository.save(new TeacherCourse(teacher, course));
+        }
+    }
+
+    private void ensureEnrollment(Student student, Course course) {
+        if (!enrollmentRepository.existsByStudentIdAndCourseId(student.getId(), course.getId())) {
+            enrollmentRepository.save(new Enrollment(student, course));
+        }
+    }
+
+    @Override
+    @Transactional
+    public void run(String... args) {
+        // 1. Ensure Core Courses
+        Course cs301 = ensureCourse("CS301", "Java Programming", 6);
+        Course cs302 = ensureCourse("CS302", "Database Management Systems", 6);
+        Course cs303 = ensureCourse("CS303", "Computer Networks", 6);
+        Course cs304 = ensureCourse("CS304", "Compiler Design", 6);
+
+        // 2. Ensure Admin
+        ensureUser("System Administrator", "admin@college.com", "admin123", UserRole.ADMIN);
+
+        // 3. Ensure Teachers
+        User cseTeacherUser = ensureUser("Prof. Rajesh Sharma", "teacher@college.com", "teacher123", UserRole.TEACHER);
+        Teacher cseTeacher = ensureTeacher(cseTeacherUser, "EMP-CSE-104", "Computer Science");
+        ensureTeacherCourse(cseTeacher, cs301);
+        ensureTeacherCourse(cseTeacher, cs302);
+        ensureTeacherCourse(cseTeacher, cs303);
+
+        User bcaTeacherUser = ensureUser("Prof. Alok Verma", "teacher.bca@college.com", "teacher123", UserRole.TEACHER);
+        Teacher bcaTeacher = ensureTeacher(bcaTeacherUser, "EMP-BCA-201", "BCA / Computer Applications");
+        ensureTeacherCourse(bcaTeacher, cs304);
+
+        // 4. Ensure Students & Enrollments across active demo courses
+        User hemantUser = ensureUser("Hemant Singh", "student@college.com", "student123", UserRole.STUDENT);
+        Student hemant = ensureStudent(hemantUser, "21CSE101", "Computer Science", 6);
+        ensureEnrollment(hemant, cs301);
+        ensureEnrollment(hemant, cs302);
+        ensureEnrollment(hemant, cs303);
+        ensureEnrollment(hemant, cs304);
+
+        User omUser = ensureUser("Om Bijwe", "om@college.com", "student123", UserRole.STUDENT);
+        Student om = ensureStudent(omUser, "21CSE105", "Computer Science", 6);
+        ensureEnrollment(om, cs301);
+        ensureEnrollment(om, cs302);
+        ensureEnrollment(om, cs303);
+        ensureEnrollment(om, cs304);
+
+        User priyaUser = ensureUser("Priya Sharma", "priya@college.com", "student123", UserRole.STUDENT);
+        Student priya = ensureStudent(priyaUser, "21CSE102", "Computer Science", 6);
+        ensureEnrollment(priya, cs301);
+        ensureEnrollment(priya, cs304);
+
+        System.out.println(">>> [PresenceGuard] Database verified & seeded idempotently (Admin, Teachers, Students, Courses, Enrollments).");
     }
 }

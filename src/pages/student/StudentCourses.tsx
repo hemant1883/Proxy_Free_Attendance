@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
 import { Course } from '../../types';
 import { BookOpen, GraduationCap, CheckCircle } from 'lucide-react';
 
 export const StudentCourses: React.FC = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchCourses = async () => {
       try {
-        const data = await api.getCourses();
-        setCourses(data);
+        const data = await api.getStudentCourses(user?.studentId);
+        setCourses(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -19,7 +21,7 @@ export const StudentCourses: React.FC = () => {
       }
     };
     fetchCourses();
-  }, []);
+  }, [user?.studentId]);
 
   return (
     <div className="space-y-6">

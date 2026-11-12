@@ -11,6 +11,7 @@ export interface BLEBroadcastConfig {
 
 export interface BLEScanOptions {
   courseCode?: string;
+  courseName?: string;
   timeoutMs?: number;
   sessionId?: number;
   teacherName?: string;

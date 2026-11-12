@@ -8,19 +8,34 @@ import { NativeBleAdvertiser } from './NativeBleAdvertiser';
 // Institutional PresenceGuard Service UUID for Classroom BLE Beacons
 export const PRESENCEGUARD_SERVICE_UUID = '0000feaa-0000-1000-8000-00805f9b34fb';
 
+export interface BLEScanDiagnostics {
+  totalPacketsSeen: number;
+  uniqueDevicesSeen: number;
+  matchedBy?: string;
+  lastError?: string;
+}
+
+const KNOWN_COURSES: Record<string, string> = {
+  'CS301': 'Java Programming',
+  'CS302': 'Database Management Systems',
+  'CS303': 'Computer Networks',
+  'CS304': 'Compiler Design',
+};
+
 // Utility to convert hex strings, DataView, ArrayBuffer, and Uint8Array into ASCII and Hex
 function parseDataPayload(data: any): { ascii: string; hex: string } {
   if (!data) return { ascii: '', hex: '' };
 
   if (typeof data === 'string') {
+    const cleanHex = data.replace(/\s+/g, '');
     let ascii = '';
-    for (let i = 0; i < data.length; i += 2) {
-      const code = parseInt(data.substring(i, i + 2), 16);
+    for (let i = 0; i + 1 < cleanHex.length; i += 2) {
+      const code = parseInt(cleanHex.substring(i, i + 2), 16);
       if (!isNaN(code) && code >= 32 && code <= 126) {
         ascii += String.fromCharCode(code);
       }
     }
-    return { ascii, hex: data.toUpperCase() };
+    return { ascii, hex: cleanHex.toUpperCase() };
   }
 
   try {
@@ -57,6 +72,14 @@ class CapacitorBLEServiceImpl implements BLEService {
   private isScanning = false;
   private activeBroadcast: BLEBroadcastConfig | null = null;
   private lastMeasuredRSSI: number = -55;
+  private lastDiagnostics: BLEScanDiagnostics = {
+    totalPacketsSeen: 0,
+    uniqueDevicesSeen: 0,
+  };
+
+  public getLastScanDiagnostics(): BLEScanDiagnostics {
+    return this.lastDiagnostics;
+  }
 
   private async ensureInitialized(): Promise<boolean> {
     if (!Capacitor.isNativePlatform()) {
@@ -158,16 +181,32 @@ class CapacitorBLEServiceImpl implements BLEService {
 
     this.isScanning = true;
     let foundDevice: BLEDiscoveredDevice | null = null;
-    const targetCode = options?.courseCode?.toUpperCase() || 'CS301';
+    let hasTeacherInPayload = false;
+    const requestedCode = options?.courseCode?.trim().toUpperCase() || '';
+    const seenAddresses = new Set<string>();
+    let totalPackets = 0;
+
+    this.lastDiagnostics = {
+      totalPacketsSeen: 0,
+      uniqueDevicesSeen: 0,
+    };
 
     try {
       await new Promise<void>(async (resolve, reject) => {
-        const timeout = setTimeout(async () => {
-          try {
-            await BleClient.stopLEScan();
-          } catch {}
+        let finished = false;
+        let graceTimer: ReturnType<typeof setTimeout> | null = null;
+        let scanTimeout: ReturnType<typeof setTimeout> | null = null;
+
+        const finishScan = () => {
+          if (finished) return;
+          finished = true;
+          if (scanTimeout) clearTimeout(scanTimeout);
+          if (graceTimer) clearTimeout(graceTimer);
+          BleClient.stopLEScan().catch(() => {});
           resolve();
-        }, options?.timeoutMs || 10000);
+        };
+
+        scanTimeout = setTimeout(finishScan, options?.timeoutMs || 10000);
 
         try {
           await BleClient.requestLEScan(
@@ -177,62 +216,67 @@ class CapacitorBLEServiceImpl implements BLEService {
               allowDuplicates: true
             },
             (result: ScanResult) => {
+              if (finished) return;
+
+              totalPackets += 1;
+              if (result.device?.deviceId) {
+                seenAddresses.add(result.device.deviceId);
+              }
+              this.lastDiagnostics.totalPacketsSeen = totalPackets;
+              this.lastDiagnostics.uniqueDevicesSeen = seenAddresses.size;
+
               const deviceName = result.device?.name || result.localName || '';
               const rssi = result.rssi ?? -60;
 
               // A. Check Service UUIDs (PresenceGuard UUID: feaa)
-              const hasPresenceGuardUuid = Array.isArray(result.uuids) && result.uuids.some((u: string) => 
+              const hasPresenceGuardUuid = Array.isArray(result.uuids) && result.uuids.some((u: string) =>
                 u.toLowerCase().includes('feaa') || u.toLowerCase() === PRESENCEGUARD_SERVICE_UUID.toLowerCase()
               );
 
-              // Course catalog map for dynamic course name resolution
-              const KNOWN_COURSES: Record<string, string> = {
-                'CS301': 'Java Programming',
-                'CS302': 'Database Management Systems',
-                'CS303': 'Computer Networks',
-                'CS304': 'Compiler Design',
-              };
-
-              let detectedSessionId: number = options?.sessionId || 1;
-              let detectedCourseCode: string = targetCode;
-              let detectedTeacherName: string = options?.teacherName || 'Classroom Faculty';
+              let detectedSessionId: number | undefined = undefined;
+              let detectedCourseCode: string | undefined = undefined;
+              let detectedTeacherName: string | undefined = undefined;
 
               const parsePayloadData = (text: string) => {
                 if (!text) return;
-                // Format 1: "sessionId#courseCode#teacherName" (e.g. "1#CS301#Prof. Rajesh")
+                // Format 1 (Scan Response): "sessionId#courseCode#teacherName" (e.g. "1#CS304#Prof. Alok Ver")
                 if (text.includes('#')) {
                   const parts = text.split('#');
                   if (parts[0] && !isNaN(Number(parts[0]))) detectedSessionId = Number(parts[0]);
                   if (parts[1]) detectedCourseCode = parts[1].trim().toUpperCase();
-                  if (parts[2]) detectedTeacherName = parts[2].trim();
+                  if (parts[2] && parts[2].trim()) detectedTeacherName = parts[2].trim();
                 }
-                // Format 2: "PG:sessionId:courseCode" (e.g. "PG:1:CS301")
-                else if (text.startsWith('PG:')) {
-                  const parts = text.split(':');
-                  if (parts.length >= 3) {
-                    if (!isNaN(Number(parts[1]))) detectedSessionId = Number(parts[1]);
-                    if (parts[2]) detectedCourseCode = parts[2].trim().toUpperCase();
-                  } else if (parts.length === 2) {
-                    detectedCourseCode = parts[1].trim().toUpperCase();
+                // Format 2 (Primary Manufacturer Data): "PG:sessionId:courseCode" (e.g. "PG:1:CS304")
+                else {
+                  const pgColonIdx = text.indexOf('PG:');
+                  if (pgColonIdx !== -1) {
+                    const sub = text.slice(pgColonIdx);
+                    const parts = sub.split(':');
+                    if (parts.length >= 3) {
+                      if (!isNaN(Number(parts[1]))) detectedSessionId = Number(parts[1]);
+                      if (parts[2]) detectedCourseCode = parts[2].trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+                    } else if (parts.length === 2) {
+                      detectedCourseCode = parts[1].trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+                    }
+                  } else if (text.includes('PG_')) {
+                    const code = text.split('PG_')[1]?.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+                    if (code) detectedCourseCode = code;
                   }
-                }
-                // Format 3: "PG_CS301"
-                else if (text.includes('PG_')) {
-                  const code = text.split('PG_')[1]?.trim().toUpperCase();
-                  if (code) detectedCourseCode = code;
                 }
               };
 
-              // B. Decode Service Data (Handles DataView, ArrayBuffer, hex string)
+              // B. Decode Service Data
               let serviceDataMatch = false;
               if (result.serviceData) {
                 for (const [uuid, data] of Object.entries(result.serviceData)) {
                   const parsed = parseDataPayload(data);
                   if (parsed.ascii) {
                     parsePayloadData(parsed.ascii);
-                    if (parsed.ascii.toUpperCase().includes(targetCode) || 
-                        parsed.ascii.toUpperCase().includes('PG') ||
-                        parsed.ascii.includes('#')) {
+                    if (
+                      (requestedCode && parsed.ascii.toUpperCase().includes(requestedCode)) ||
+                      parsed.ascii.toUpperCase().includes('PG') ||
+                      parsed.ascii.includes('#')
+                    ) {
                       serviceDataMatch = true;
                     }
                   }
@@ -249,64 +293,115 @@ class CapacitorBLEServiceImpl implements BLEService {
                   const parsed = parseDataPayload(data);
                   if (parsed.ascii) {
                     parsePayloadData(parsed.ascii);
-                    if (parsed.ascii.toUpperCase().includes(targetCode) || 
-                        parsed.ascii.toUpperCase().includes('PG')) {
+                    if (
+                      (requestedCode && parsed.ascii.toUpperCase().includes(requestedCode)) ||
+                      parsed.ascii.toUpperCase().includes('PG:')
+                    ) {
                       manufacturerMatch = true;
                     }
                   }
-                  if (String(id) === '4919' || String(id) === '0x1337' || String(id).toLowerCase().includes('1337')) {
+                  if (String(id) === '4919' || String(id).toLowerCase().includes('1337')) {
                     manufacturerMatch = true;
                   }
                 }
               }
 
-              // D. Check advertised device name or local name (e.g. "PG_CS301")
-              const nameMatch = deviceName.toUpperCase().includes(targetCode) || 
-                                deviceName.toUpperCase().includes('PG');
-              if (deviceName.toUpperCase().includes('PG')) {
+              // D. Check advertised device name or local name (e.g. "PG_CS304")
+              const nameUpper = deviceName.toUpperCase();
+              const nameMatch =
+                (requestedCode.length > 0 && nameUpper.includes(`PG_${requestedCode}`)) ||
+                nameUpper.startsWith('PG_');
+              if (nameUpper.includes('PG')) {
                 parsePayloadData(deviceName);
               }
 
-              // E. Check raw advertisement hex bytes if present
+              // E. Check raw advertisement hex/ASCII bytes if present
               let rawMatch = false;
               if (result.rawAdvertisement) {
-                const rawStr = typeof result.rawAdvertisement === 'string' ? result.rawAdvertisement.toLowerCase() : '';
-                const asciiHex = Array.from(targetCode).map(c => c.charCodeAt(0).toString(16)).join('');
-                // 3713 is 0x1337 in little-endian, 5047 is PG, feaa is UUID
-                if (rawStr.includes('3713') || rawStr.includes('5047') || rawStr.includes('feaa') || (asciiHex && rawStr.includes(asciiHex))) {
+                const rawParsed = parseDataPayload(result.rawAdvertisement);
+                const rawHex = rawParsed.hex.toLowerCase();
+                const targetHex = requestedCode
+                  ? Array.from(requestedCode).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
+                  : '';
+                // 3713 = 0x1337 (little-endian), aafe = 0xFEAA (little-endian), 50473a = "PG:"
+                if (
+                  rawHex.includes('3713') ||
+                  rawHex.includes('50473a') ||
+                  rawHex.includes('aafe') ||
+                  rawHex.includes('feaa') ||
+                  (targetHex && rawHex.includes(targetHex))
+                ) {
                   rawMatch = true;
+                  if (rawParsed.ascii) {
+                    parsePayloadData(rawParsed.ascii);
+                  }
                 }
               }
 
-              // Any PresenceGuard signature confirms this is the teacher's classroom beacon
               const isMatch = hasPresenceGuardUuid || serviceDataMatch || manufacturerMatch || nameMatch || rawMatch;
+              if (!isMatch) return;
 
-              if (isMatch && !foundDevice) {
-                const finalCourseName = KNOWN_COURSES[detectedCourseCode] || options?.courseName || `${detectedCourseCode} Lecture`;
-                this.lastMeasuredRSSI = rssi;
-                foundDevice = {
-                  deviceId: result.device.deviceId,
-                  deviceName: `Teacher Beacon [${detectedCourseCode}]`,
-                  courseCode: detectedCourseCode,
-                  courseName: finalCourseName,
-                  sessionId: detectedSessionId,
-                  teacherName: detectedTeacherName,
-                  rssi: rssi, // Raw physical antenna signal measured directly by the phone hardware!
-                  timestamp: Date.now(),
-                  isSimulated: false // Physical hardware packet!
-                };
-                clearTimeout(timeout);
-                BleClient.stopLEScan().catch(() => {});
-                resolve();
+              // If user asked for a specific courseCode and packet explicitly identifies a DIFFERENT courseCode, ignore if we can still find the right one
+              if (
+                requestedCode &&
+                detectedCourseCode &&
+                detectedCourseCode !== requestedCode &&
+                options?.sessionId !== detectedSessionId
+              ) {
+                return;
+              }
+
+              const matchReason = [
+                hasPresenceGuardUuid ? 'UUID:0xFEAA' : '',
+                serviceDataMatch ? 'ServiceData' : '',
+                manufacturerMatch ? 'Manufacturer:0x1337' : '',
+                nameMatch ? 'DeviceName' : '',
+                rawMatch ? 'RawAD' : '',
+              ].filter(Boolean).join('+');
+
+              const finalCourseCode = detectedCourseCode || requestedCode || 'COURSE';
+              const finalSessionId = detectedSessionId || options?.sessionId || 1;
+              const finalTeacherName = detectedTeacherName || foundDevice?.teacherName || options?.teacherName || 'Classroom Faculty';
+              const finalCourseName =
+                KNOWN_COURSES[finalCourseCode] ||
+                (finalCourseCode === requestedCode ? options?.courseName : undefined) ||
+                `${finalCourseCode} Lecture`;
+
+              this.lastMeasuredRSSI = rssi;
+              this.lastDiagnostics.matchedBy = matchReason;
+
+              foundDevice = {
+                deviceId: result.device.deviceId,
+                deviceName: `Teacher Beacon [${finalCourseCode}]`,
+                courseCode: finalCourseCode,
+                courseName: finalCourseName,
+                sessionId: finalSessionId,
+                teacherName: finalTeacherName,
+                rssi,
+                timestamp: Date.now(),
+                isSimulated: false
+              };
+
+              if (detectedTeacherName) {
+                hasTeacherInPayload = true;
+              }
+
+              // If scan response with teacher name arrived, finish immediately; otherwise wait up to 800ms for scanResponse to merge
+              if (hasTeacherInPayload) {
+                finishScan();
+              } else if (!graceTimer) {
+                graceTimer = setTimeout(finishScan, 800);
               }
             }
           );
-        } catch (scanErr) {
+        } catch (scanErr: any) {
+          this.lastDiagnostics.lastError = scanErr?.message || String(scanErr);
           console.warn('[PresenceGuard BLE] Native scan error:', scanErr);
           reject(scanErr);
         }
       });
     } catch (err: any) {
+      this.lastDiagnostics.lastError = err?.message || String(err);
       console.warn('[PresenceGuard BLE] Scan exception:', err);
       throw err;
     } finally {

@@ -14,7 +14,7 @@ export const TeacherDashboard: React.FC<{
   const [activeSession, setActiveSession] = useState<AttendanceSession | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const teacherId = user?.teacherId || 1;
+  const teacherId = user?.teacherId;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -23,16 +23,13 @@ export const TeacherDashboard: React.FC<{
         const safeCourses = Array.isArray(assignedCourses) ? assignedCourses : [];
         setCourses(safeCourses);
 
-        // Check if there is an active session for any of the teacher's courses
-        // Query active sessions from mockDb
-        const allSessions = await api.getActiveStudentSessions(1); // will return active sessions
-        if (Array.isArray(allSessions)) {
-          const currentActive = allSessions.find(s => s.teacherId === teacherId && s.active);
-          if (currentActive) {
-            const details = await api.getSessionDetails(currentActive.id);
-            if (details && details.session) {
-              setActiveSession(details.session);
-            }
+        // Check active sessions via teacher endpoint
+        const activeSessions = await api.getActiveTeacherSessions(teacherId);
+        if (Array.isArray(activeSessions) && activeSessions.length > 0) {
+          const currentActive = activeSessions[0];
+          const details = await api.getSessionDetails(currentActive.id);
+          if (details && details.session) {
+            setActiveSession(details.session);
           }
         }
       } catch (err) {

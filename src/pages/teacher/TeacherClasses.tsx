@@ -5,7 +5,7 @@ import { Course, Student } from '../../types';
 import { BookOpen, Users, Play, GraduationCap, ChevronRight } from 'lucide-react';
 
 export const TeacherClasses: React.FC<{
-  onStartAttendance: (courseId: number) => void;
+  onStartAttendance: (sessionId: number) => void;
 }> = ({ onStartAttendance }) => {
   const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
@@ -13,8 +13,9 @@ export const TeacherClasses: React.FC<{
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
 
-  const teacherId = user?.teacherId || 1;
+  const teacherId = user?.teacherId;
 
   useEffect(() => {
     const fetchCourses = async () => {
@@ -44,6 +45,18 @@ export const TeacherClasses: React.FC<{
       console.error(err);
     } finally {
       setLoadingStudents(false);
+    }
+  };
+
+  const handleStartCourseSession = async (courseId: number) => {
+    setStartingSession(true);
+    try {
+      const session = await api.startAttendanceSession(teacherId, courseId, -70);
+      onStartAttendance(session.id);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to start attendance session');
+    } finally {
+      setStartingSession(false);
     }
   };
 
@@ -111,11 +124,12 @@ export const TeacherClasses: React.FC<{
                   </p>
                 </div>
                 <button
-                  onClick={() => onStartAttendance(selectedCourse.id)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors shrink-0"
+                  onClick={() => handleStartCourseSession(selectedCourse.id)}
+                  disabled={startingSession}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors shrink-0"
                 >
                   <Play className="w-3.5 h-3.5 fill-white" />
-                  <span>Start Attendance Session</span>
+                  <span>{startingSession ? 'Starting Session...' : 'Start Attendance Session'}</span>
                 </button>
               </div>
 

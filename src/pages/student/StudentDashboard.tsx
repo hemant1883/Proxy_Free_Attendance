@@ -18,7 +18,7 @@ export const StudentDashboard: React.FC<{ onNavigate: (tab: string) => void }> =
     const fetchData = async () => {
       try {
         const [cRes, sRes, hRes] = await Promise.all([
-          api.getCourses(),
+          api.getStudentCourses(studentId),
           api.getActiveStudentSessions(studentId),
           api.getStudentHistory(studentId)
         ]);

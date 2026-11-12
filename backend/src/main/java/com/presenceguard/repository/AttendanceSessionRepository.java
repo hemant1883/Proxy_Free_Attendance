@@ -12,5 +12,6 @@ public interface AttendanceSessionRepository extends JpaRepository<AttendanceSes
     Optional<AttendanceSession> findBySessionCode(String sessionCode);
     List<AttendanceSession> findByCourseIdAndActiveTrue(Long courseId);
     List<AttendanceSession> findByTeacherIdOrderByStartTimeDesc(Long teacherId);
+    List<AttendanceSession> findByTeacherIdAndActiveTrueOrderByStartTimeDesc(Long teacherId);
     List<AttendanceSession> findByActiveTrue();
 }

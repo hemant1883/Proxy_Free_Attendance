@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { warmupBackend } from './services/api';
 import { Navbar } from './components/common/Navbar';
 import { Sidebar } from './components/common/Sidebar';
 import { LoginPage } from './pages/auth/LoginPage';
@@ -30,6 +31,11 @@ const MainAppContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [selectedSessionId, setSelectedSessionId] = useState<number | undefined>(undefined);
   const [showDocs, setShowDocs] = useState<boolean>(false);
+
+  // Wake up shared cloud backend on app startup
+  useEffect(() => {
+    warmupBackend();
+  }, []);
 
   // Sync default tab when role changes
   useEffect(() => {
@@ -107,7 +113,8 @@ const MainAppContent: React.FC = () => {
         case 'teacher-classes':
           return (
             <TeacherClasses
-              onStartAttendance={(courseId) => {
+              onStartAttendance={(sessionId) => {
+                setSelectedSessionId(sessionId);
                 setCurrentTab('teacher-live');
               }}
             />
