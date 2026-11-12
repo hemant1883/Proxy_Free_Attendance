@@ -172,6 +172,7 @@ public class NativeBleAdvertiserPlugin extends Plugin {
 
         ParcelUuid pUuid = ParcelUuid.fromString(PRESENCEGUARD_UUID_STR);
         int sessionId = call.getInt("sessionId", 1);
+        String teacherName = call.getString("teacherName", "Faculty");
         String safeCourseCode = (courseCode != null ? courseCode.trim() : "CLASS").replaceAll("[:#]", "");
         if (safeCourseCode.length() > 8) {
             safeCourseCode = safeCourseCode.substring(0, 8);
